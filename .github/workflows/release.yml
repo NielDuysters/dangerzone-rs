@@ -82,7 +82,7 @@ jobs:
             aarch64-linux-gnu-gcc
 
       - name: Strip binary (Linux and macOS)
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' and matrix.target != 'aarch64-unknown-linux-gnu'
         run: |
           strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
 
