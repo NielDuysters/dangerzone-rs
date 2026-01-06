@@ -12,6 +12,8 @@ This is a simple Rust implementation of Dangerzone that converts potentially dan
 - Supports both podman and docker runtimes
 - Streams documents through the conversion process
 - Two-phase conversion: document → pixels → safe PDF
+- Parses the binary pixel stream protocol
+- Reconstructs PDF from pixel data using Rust PDF libraries
 
 ## Prerequisites
 
@@ -29,6 +31,8 @@ This is a simple Rust implementation of Dangerzone that converts potentially dan
 ```bash
 cargo build --release
 ```
+
+The binary will be available at `target/release/dangerzone`.
 
 ## Usage
 
@@ -49,10 +53,13 @@ cargo run -- --input unsafe.pdf --output safe.pdf
 
 ## How it works
 
-1. **Document to Pixels**: The input document is streamed to a sandboxed container that converts it to pixel data
-2. **Pixels to PDF**: The pixel data is streamed to another sandboxed container that reconstructs a safe PDF
+1. **Document to Pixels**: The input document is streamed to stdin of a sandboxed container that converts it to pixel data
+2. **Parse Pixel Stream**: The binary output stream is parsed according to the Dangerzone protocol:
+   - Page count (2 bytes, big-endian)
+   - For each page: width (2 bytes), height (2 bytes), RGB pixel data
+3. **Pixels to PDF**: The pixel data is converted to a safe PDF using Rust PDF libraries
 
-Both conversions happen in isolated containers with strict security settings following the Dangerzone security model.
+Both conversions happen with strict security settings following the Dangerzone security model.
 
 ## Security Features
 
@@ -62,8 +69,17 @@ The implementation uses the same security flags as the official Dangerzone:
 - `--network=none`: No network access
 - `-u dangerzone`: Run as unprivileged user
 - `--rm`: Automatically remove containers after use
+- `--log-driver none`: Don't log container output
+
+## Implementation Details
+
+This is a minimal implementation that demonstrates the core Dangerzone workflow:
+- Uses the container for the untrusted document-to-pixels conversion
+- Implements the binary I/O protocol for receiving pixel data
+- Converts pixels back to PDF using the `printpdf` crate
 
 ## References
 
 - [Dangerzone Project](https://github.com/freedomofpress/dangerzone)
 - [Container Security Flags](https://github.com/freedomofpress/dangerzone/blob/main/dangerzone/isolation_provider/container.py)
+- [Binary Protocol](https://github.com/freedomofpress/dangerzone/blob/main/dangerzone/conversion/common.py)
