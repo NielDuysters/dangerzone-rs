@@ -76,19 +76,37 @@ Unit tests:
 cargo test
 ```
 
-Integration tests (requires podman and dangerzone image):
+Integration tests (requires podman, dangerzone image, and optionally pdftoppm):
 ```bash
 # Pull the container image first
 podman pull ghcr.io/freedomofpress/dangerzone/v1
 
-# Run integration tests
+# Install pdftoppm for pixel-by-pixel comparison (optional, falls back to size comparison)
+# On Ubuntu/Debian: sudo apt-get install poppler-utils
+# On macOS: brew install poppler
+
+# Run all integration tests (tests all files in tests/ directory automatically)
 cargo test --test integration_test -- --ignored
+
+# Run single test
+cargo test --test integration_test test_single_docx -- --ignored
 
 # Or test a specific conversion
 cargo run -- --input tests/sample-docx.docx --output /tmp/output.pdf
 ```
 
-The integration tests compare generated PDFs against reference outputs in `tests/reference/` by checking file sizes are within reasonable bounds.
+### Test Features
+
+The integration tests automatically:
+- Discover all test files in the `tests/` directory
+- Determine expected behavior based on filename (`sample_bad_*` files are expected to fail)
+- Compare converted PDFs with reference outputs using pixel-by-pixel comparison (requires `pdftoppm`)
+- Fall back to file size comparison if `pdftoppm` is not available
+- Provide detailed pass/fail reporting for each test case
+
+Test naming conventions:
+- `sample-*.ext`: Expected to convert successfully
+- `sample_bad_*.ext`: Expected to fail conversion
 
 ## How it works
 
