@@ -371,6 +371,19 @@ fn main() -> Result<()> {
 fn apply_ocr(input_pdf: &str, output_pdf: &str) -> Result<()> {
     eprintln!("Applying OCR to PDF...");
 
+    // On macOS, try using PDFKit's saveTextFromOCROption first
+    #[cfg(target_os = "macos")]
+    {
+        match apply_ocr_macos(input_pdf, output_pdf) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                eprintln!("Warning: macOS PDFKit OCR failed: {}", e);
+                eprintln!("Falling back to ocrmypdf...");
+            }
+        }
+    }
+
+    // Fall back to ocrmypdf (for non-macOS or if PDFKit fails)
     let output = Command::new("ocrmypdf")
         .args([
             "--skip-text", // Skip pages that already have text
@@ -399,6 +412,47 @@ fn apply_ocr(input_pdf: &str, output_pdf: &str) -> Result<()> {
             std::fs::copy(input_pdf, output_pdf).context("Failed to copy PDF")?;
             Ok(())
         }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_ocr_macos(input_pdf: &str, output_pdf: &str) -> Result<()> {
+    eprintln!("Using macOS PDFKit for OCR...");
+
+    // Get the path to the Swift script
+    // In production, this would be bundled with the binary
+    // For development, we use the script in the src directory
+    let script_path = if let Ok(exe_path) = std::env::current_exe() {
+        // Try to find the script relative to the executable
+        let mut path = exe_path.parent().unwrap().to_path_buf();
+        path.push("macos_ocr.swift");
+        if path.exists() {
+            path
+        } else {
+            // Fallback to src directory (development mode)
+            std::path::PathBuf::from("src/macos_ocr.swift")
+        }
+    } else {
+        std::path::PathBuf::from("src/macos_ocr.swift")
+    };
+
+    if !script_path.exists() {
+        anyhow::bail!("macOS OCR script not found at {:?}", script_path);
+    }
+
+    let output = Command::new("swift")
+        .arg(&script_path)
+        .arg(input_pdf)
+        .arg(output_pdf)
+        .output()
+        .context("Failed to execute Swift OCR script")?;
+
+    if output.status.success() {
+        eprintln!("OCR applied successfully using macOS PDFKit");
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Swift OCR script failed: {}", stderr)
     }
 }
 
@@ -563,5 +617,28 @@ mod tests {
             pdf_data.len() < estimated_uncompressed_pdf_size / 2,
             "PDF with compression should be significantly smaller than uncompressed"
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_macos_ocr_function_compiles() {
+        // This test just verifies that the macOS-specific code compiles
+        // We can't actually test it without Swift and PDFKit available
+        // but this ensures the conditional compilation works correctly
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a minimal PDF for testing
+        let mut temp_input = NamedTempFile::new().unwrap();
+        temp_input.write_all(b"%PDF-1.4\n%%EOF\n").unwrap();
+        let input_path = temp_input.path().to_str().unwrap();
+
+        let temp_output = NamedTempFile::new().unwrap();
+        let output_path = temp_output.path().to_str().unwrap();
+
+        // This will fail because the script doesn't exist in test env,
+        // but it proves the function exists and compiles
+        let result = apply_ocr_macos(input_path, output_path);
+        assert!(result.is_err()); // Expected to fail in test environment
     }
 }

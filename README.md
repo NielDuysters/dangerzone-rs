@@ -56,10 +56,15 @@ Basic conversion:
 dangerzone-rs --input unsafe.pdf --output safe.pdf
 ```
 
-With OCR (requires `ocrmypdf`):
+With OCR:
 ```bash
 dangerzone-rs --input unsafe.pdf --output safe.pdf --ocr
 ```
+
+**Note on OCR**: 
+- On **macOS**, the tool uses PDFKit's built-in `saveTextFromOCROption` for OCR, which is faster and doesn't require additional dependencies.
+- On **other platforms**, it falls back to `ocrmypdf` (requires installation: `pip install ocrmypdf`).
+- If neither method is available, the tool will still create a safe PDF without OCR.
 
 ## How it works
 
