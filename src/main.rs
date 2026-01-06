@@ -182,7 +182,7 @@ fn convert_pixels_to_pdf(pages: &[PageData], output_path: &str, _enable_ocr: boo
 }
 
 /// Write a minimal PDF file with embedded RGB pixel data
-fn write_pdf(writer: &mut File, pages: &[PageData]) -> Result<()> {
+fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
     // PDF structure:
     // 1. Header
     // 2. Objects (catalog, pages, page objects, image objects)
@@ -418,5 +418,46 @@ mod tests {
         assert_eq!(pages[0].width, width);
         assert_eq!(pages[0].height, height);
         assert_eq!(pages[0].pixels.len(), num_pixels);
+    }
+
+    #[test]
+    fn test_pdf_generation() {
+        use std::io::Cursor;
+        
+        // Create a simple test page with red pixels
+        let width = 10u16;
+        let height = 10u16;
+        let mut pixels = Vec::new();
+        
+        // Fill with red pixels (RGB = 255, 0, 0)
+        for _ in 0..(width * height) {
+            pixels.push(255); // R
+            pixels.push(0);   // G
+            pixels.push(0);   // B
+        }
+        
+        let page = PageData { width, height, pixels };
+        let pages = vec![page];
+        
+        // Write PDF to a buffer
+        let mut buffer = Cursor::new(Vec::new());
+        let result = write_pdf(buffer.get_mut(), &pages);
+        assert!(result.is_ok(), "PDF generation should succeed");
+        
+        // Verify PDF structure
+        let pdf_data = buffer.into_inner();
+        assert!(pdf_data.len() > 0, "PDF should have data");
+        
+        // Check PDF header
+        let header = String::from_utf8_lossy(&pdf_data[0..9]);
+        assert!(header.starts_with("%PDF-1.4"), "PDF should have correct header");
+        
+        // Check PDF trailer
+        let trailer = String::from_utf8_lossy(&pdf_data);
+        assert!(trailer.contains("%%EOF"), "PDF should have EOF marker");
+        assert!(trailer.contains("/Type /Catalog"), "PDF should have catalog");
+        assert!(trailer.contains("/Type /Pages"), "PDF should have pages");
+        assert!(trailer.contains("/Type /Page"), "PDF should have page object");
+        assert!(trailer.contains("/Type /XObject"), "PDF should have image object");
     }
 }
