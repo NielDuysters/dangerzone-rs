@@ -25,23 +25,40 @@ This process removes any malicious code, macros, or exploits that may be hidden 
 
 ## Prerequisites
 
-- Rust (for building)
+- Rust (for building from source)
 - Podman
 - Dangerzone container image:
   ```bash
   podman pull ghcr.io/freedomofpress/dangerzone/v1
   ```
 
-## Usage
+## Installation
+
+### Download Pre-built Binaries
+
+Download the latest release for your platform from the [Releases page](https://github.com/almet/dangerzone-rs/releases).
+
+Available platforms:
+- Linux (x86_64, ARM64)
+- macOS (Intel x86_64, Apple Silicon ARM64)
+- Windows (x86_64)
+
+### Build from Source
 
 ```bash
 cargo build --release
-./target/release/dangerzone-rs --input unsafe.pdf --output safe.pdf
+```
+
+## Usage
+
+Basic conversion:
+```bash
+dangerzone-rs --input unsafe.pdf --output safe.pdf
 ```
 
 With OCR (requires `ocrmypdf`):
 ```bash
-./target/release/dangerzone-rs --input unsafe.pdf --output safe.pdf --ocr
+dangerzone-rs --input unsafe.pdf --output safe.pdf --ocr
 ```
 
 ## How it works
