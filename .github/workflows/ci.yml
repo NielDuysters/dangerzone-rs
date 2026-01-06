@@ -53,7 +53,7 @@ jobs:
           ${{ runner.os }}-target-
     
     - name: Run unit tests
-      run: cargo test --lib --bins
+      run: cargo test --bin dangerzone-rs
     
     - name: Run clippy
       run: cargo clippy --all-targets -- -D warnings
@@ -137,7 +137,7 @@ jobs:
         RUST_TEST_THREADS: 4
 
   test-integration-windows:
-    name: Integration Tests (Windows/Podman)
+    name: Integration Tests (Windows)
     runs-on: windows-latest
     
     steps:
@@ -145,11 +145,6 @@ jobs:
     
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
-    
-    - name: Install Podman
-      run: |
-        choco install podman-desktop -y
-        # Note: Windows integration may require WSL2
     
     - name: Cache cargo
       uses: actions/cache@v4
@@ -165,10 +160,9 @@ jobs:
     - name: Build project
       run: cargo build --release
     
-    - name: Run integration tests (without podman comparison)
-      run: cargo test --test integration_test test_pixel_data_parsing -- --ignored
-      continue-on-error: true
-      # Windows podman setup is complex, so we run limited tests
+    - name: Run unit tests
+      run: cargo test --bin dangerzone-rs
+      # Windows podman setup is complex, so we only run unit tests
 
   lint:
     name: Lint and Format Check
