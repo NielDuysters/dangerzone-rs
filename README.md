@@ -39,10 +39,25 @@ Basic usage:
 dangerzone-rs --input unsafe.pdf --output safe.pdf
 ```
 
+With OCR enabled:
+```bash
+dangerzone-rs --input unsafe.pdf --output safe.pdf --ocr
+```
+
 Or using cargo run:
 ```bash
 cargo run -- --input unsafe.pdf --output safe.pdf
 ```
+
+## OCR Support
+
+The `--ocr` flag enables OCR (Optical Character Recognition) to add a searchable text layer to the output PDF. This requires `ocrmypdf` to be installed:
+
+```bash
+pip install ocrmypdf
+```
+
+If `ocrmypdf` is not available, the conversion will continue without OCR and produce a PDF without text layers.
 
 ## Supported Document Formats
 
@@ -56,18 +71,24 @@ The implementation supports all formats supported by the Dangerzone container:
 
 ## Testing
 
-To test the implementation, you'll need:
-1. A document to convert (e.g., `test.pdf`)
-2. The Dangerzone container image pulled
-
-Example:
+Unit tests:
 ```bash
-# Pull the container image
+cargo test
+```
+
+Integration tests (requires podman and dangerzone image):
+```bash
+# Pull the container image first
 podman pull ghcr.io/freedomofpress/dangerzone/v1
 
-# Convert a document
-cargo run -- --input test.pdf --output safe.pdf
+# Run integration tests
+cargo test --test integration_test -- --ignored
+
+# Or test a specific conversion
+cargo run -- --input tests/sample-docx.docx --output /tmp/output.pdf
 ```
+
+The integration tests compare generated PDFs against reference outputs in `tests/reference/` by checking file sizes are within reasonable bounds.
 
 ## How it works
 

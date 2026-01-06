@@ -19,6 +19,10 @@ struct Args {
     /// Output PDF path
     #[arg(short, long)]
     output: String,
+
+    /// Enable OCR to add text layer to PDF
+    #[arg(long, default_value = "false")]
+    ocr: bool,
 }
 
 const IMAGE_NAME: &str = "ghcr.io/freedomofpress/dangerzone/v1";
@@ -167,14 +171,13 @@ fn convert_doc_to_pixels(input_path: &str) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-fn convert_pixels_to_pdf(pages: &[PageData], output_path: &str) -> Result<()> {
+fn convert_pixels_to_pdf(pages: &[PageData], output_path: &str, _enable_ocr: bool) -> Result<()> {
     eprintln!("Converting pixels to safe PDF...");
 
     if pages.is_empty() {
         anyhow::bail!("No pages to convert");
     }
 
-    // Create a new PDF document
     let first_page = &pages[0];
     let width_mm = (first_page.width as f32) / DPI * 25.4;
     let height_mm = (first_page.height as f32) / DPI * 25.4;
@@ -182,17 +185,14 @@ fn convert_pixels_to_pdf(pages: &[PageData], output_path: &str) -> Result<()> {
     let (doc, mut page_index, mut layer_index) =
         PdfDocument::new("Sanitized Document", Mm(width_mm), Mm(height_mm), "Layer 1");
 
-    // Add first page image
     add_page_to_pdf(&doc, &mut page_index, &mut layer_index, &pages[0])?;
 
-    // Add remaining pages
     for (i, page) in pages.iter().enumerate().skip(1) {
         let width_mm = (page.width as f32) / DPI * 25.4;
         let height_mm = (page.height as f32) / DPI * 25.4;
 
         eprintln!("Adding page {} to PDF...", i + 1);
 
-        // Add new page
         let (new_page_index, new_layer_index) =
             doc.add_page(Mm(width_mm), Mm(height_mm), "Layer 1");
         page_index = new_page_index;
@@ -201,7 +201,6 @@ fn convert_pixels_to_pdf(pages: &[PageData], output_path: &str) -> Result<()> {
         add_page_to_pdf(&doc, &mut page_index, &mut layer_index, page)?;
     }
 
-    // Save the PDF
     let file = File::create(output_path).context("Failed to create output file")?;
     let mut writer = BufWriter::new(file);
     doc.save(&mut writer)
@@ -244,16 +243,65 @@ fn main() -> Result<()> {
     eprintln!("Using container runtime: podman");
     eprintln!("Input: {}", args.input);
     eprintln!("Output: {}", args.output);
+    if args.ocr {
+        eprintln!("OCR: enabled");
+    }
     eprintln!();
 
     let pixels_data = convert_doc_to_pixels(&args.input)?;
     let pages = parse_pixel_data(&pixels_data)?;
-    convert_pixels_to_pdf(&pages, &args.output)?;
+
+    let temp_output = if args.ocr {
+        format!("{}.temp.pdf", args.output)
+    } else {
+        args.output.clone()
+    };
+
+    convert_pixels_to_pdf(&pages, &temp_output, false)?;
+
+    if args.ocr {
+        apply_ocr(&temp_output, &args.output)?;
+        std::fs::remove_file(&temp_output).context("Failed to remove temporary file")?;
+    }
 
     eprintln!();
     eprintln!("Conversion completed successfully!");
     eprintln!("Processed {} page(s)", pages.len());
     Ok(())
+}
+
+fn apply_ocr(input_pdf: &str, output_pdf: &str) -> Result<()> {
+    eprintln!("Applying OCR to PDF...");
+
+    let output = Command::new("ocrmypdf")
+        .args([
+            "--skip-text", // Skip pages that already have text
+            "--force-ocr", // Force OCR on all pages
+            input_pdf,
+            output_pdf,
+        ])
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            eprintln!("OCR applied successfully");
+            Ok(())
+        }
+        Ok(result) => {
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            eprintln!("Warning: OCR failed: {}", stderr);
+            eprintln!("Falling back to PDF without OCR");
+            std::fs::copy(input_pdf, output_pdf).context("Failed to copy PDF")?;
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!("Warning: ocrmypdf not found or failed: {}", e);
+            eprintln!("Falling back to PDF without OCR");
+            eprintln!("To enable OCR, install ocrmypdf: pip install ocrmypdf");
+            std::fs::copy(input_pdf, output_pdf).context("Failed to copy PDF")?;
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -276,21 +324,21 @@ mod tests {
     #[test]
     fn test_pixel_data_parsing() {
         let mut data = Vec::new();
-        
+
         let page_count: u16 = 1;
         data.extend_from_slice(&page_count.to_be_bytes());
-        
+
         let width: u16 = 100;
         let height: u16 = 50;
         data.extend_from_slice(&width.to_be_bytes());
         data.extend_from_slice(&height.to_be_bytes());
-        
+
         let num_pixels = (width as usize) * (height as usize) * 3;
         data.extend(vec![128u8; num_pixels]);
 
         let result = parse_pixel_data(&data);
         assert!(result.is_ok());
-        
+
         let pages = result.unwrap();
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].width, width);
