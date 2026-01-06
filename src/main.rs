@@ -142,7 +142,12 @@ fn convert_doc_to_pixels(runtime: &str, input_path: &str) -> Result<Vec<u8>> {
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .context("Failed to spawn container")?;
+        .with_context(|| {
+            format!(
+                "Failed to spawn container. Make sure {} is installed and the image '{}' is pulled.",
+                runtime, IMAGE_NAME
+            )
+        })?;
 
     // Read the input document
     let mut input_file = File::open(input_path).context("Failed to open input file")?;
@@ -164,7 +169,10 @@ fn convert_doc_to_pixels(runtime: &str, input_path: &str) -> Result<Vec<u8>> {
         .context("Failed to wait for container")?;
 
     if !output.status.success() {
-        anyhow::bail!("Container failed with status: {}", output.status);
+        anyhow::bail!(
+            "Container failed with status: {}. The document format may be unsupported or corrupted.",
+            output.status
+        );
     }
 
     eprintln!("Document converted to pixels successfully");

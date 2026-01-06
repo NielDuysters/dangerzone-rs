@@ -51,6 +51,31 @@ Or using cargo run:
 cargo run -- --input unsafe.pdf --output safe.pdf
 ```
 
+## Supported Document Formats
+
+The implementation supports all formats supported by the Dangerzone container:
+- PDF documents (.pdf)
+- Microsoft Office documents (.docx, .xlsx, .pptx, .doc, .xls, .ppt)
+- OpenDocument formats (.odt, .ods, .odp, .odg)
+- Image files (.jpg, .png, .gif, .bmp, .tiff, .svg)
+- E-books (.epub)
+- And more...
+
+## Testing
+
+To test the implementation, you'll need:
+1. A document to convert (e.g., `test.pdf`)
+2. The Dangerzone container image pulled
+
+Example:
+```bash
+# Pull the container image
+podman pull ghcr.io/freedomofpress/dangerzone/v1
+
+# Convert a document
+cargo run -- --input test.pdf --output safe.pdf
+```
+
 ## How it works
 
 1. **Document to Pixels**: The input document is streamed to stdin of a sandboxed container that converts it to pixel data
