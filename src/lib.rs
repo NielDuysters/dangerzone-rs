@@ -35,6 +35,7 @@ fn read_u16_be(data: &[u8]) -> Result<u16> {
     Ok(u16::from_be_bytes([data[0], data[1]]))
 }
 
+/// Page data structure representing a single page's pixel information
 #[pyclass]
 #[derive(Clone)]
 pub struct PageData {
@@ -448,52 +449,9 @@ fn apply_ocr_macos(input_pdf: &str, output_pdf: &str) -> Result<()> {
     }
 }
 
-// PyO3 wrapper functions that convert anyhow::Result to PyResult
-#[pyfunction]
-fn parse_pixel_data_py(data: Vec<u8>) -> PyResult<Vec<PageData>> {
-    parse_pixel_data(data).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string())
-    })
-}
-
-#[pyfunction]
-fn convert_doc_to_pixels_py(input_path: String) -> PyResult<Vec<u8>> {
-    convert_doc_to_pixels(input_path).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-    })
-}
-
-#[pyfunction]
-fn pixels_to_pdf_py(pages: Vec<PageData>, output_path: String) -> PyResult<()> {
-    pixels_to_pdf(pages, output_path).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-    })
-}
-
-#[pyfunction]
-fn convert_document_py(input_path: String, output_path: String, apply_ocr: bool) -> PyResult<()> {
-    convert_document(input_path, output_path, apply_ocr).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-    })
-}
-
-#[pyfunction]
-fn apply_ocr_fn_py(input_pdf: String, output_pdf: String) -> PyResult<()> {
-    apply_ocr_fn(input_pdf, output_pdf).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-    })
-}
-
-#[pymodule]
-fn dangerzone_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PageData>()?;
-    m.add_function(wrap_pyfunction!(parse_pixel_data_py, m)?)?;
-    m.add_function(wrap_pyfunction!(convert_doc_to_pixels_py, m)?)?;
-    m.add_function(wrap_pyfunction!(pixels_to_pdf_py, m)?)?;
-    m.add_function(wrap_pyfunction!(convert_document_py, m)?)?;
-    m.add_function(wrap_pyfunction!(apply_ocr_fn_py, m)?)?;
-    Ok(())
-}
+/// Python bindings module
+/// Re-exports from the python module to make them available to PyO3
+pub mod python;
 
 #[cfg(test)]
 mod tests {

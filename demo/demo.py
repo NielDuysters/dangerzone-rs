@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Simple demo of the dangerzone-rs Python module.
-
 This demonstrates the simplest interface for converting a document to a safe PDF.
 """
 
 import sys
 from pathlib import Path
 
-import dangerzone_rs
+import dangerzone_rs as dz
 
 
 def main():
@@ -27,13 +25,13 @@ def main():
         print(f"OCR enabled: {use_ocr}")
 
         # Call the simplest conversion function
-        dangerzone_rs.convert_document_py(input_file, output_file, use_ocr)
+        dz.convert_document(input_file, output_file, use_ocr)
 
-        print("✓ Conversion complete!")
+        print("Conversion complete!")
         print(f"  Output: {output_file}")
 
     except Exception as e:
-        print(f"✗ Conversion failed: {e}")
+        print(f"Conversion failed: {e}")
         sys.exit(1)
 
 
