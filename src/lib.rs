@@ -199,13 +199,11 @@ pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool
         output_path.clone()
     };
 
-    pixels_to_pdf(pages.clone(), temp_output.clone())
-        .context("Failed to convert pixels to PDF")?;
+    pixels_to_pdf(pages.clone(), temp_output.clone()).context("Failed to convert pixels to PDF")?;
 
     if apply_ocr {
         apply_ocr_fn(temp_output.clone(), output_path.clone())?;
-        std::fs::remove_file(&temp_output)
-            .context("Failed to remove temporary file")?;
+        std::fs::remove_file(&temp_output).context("Failed to remove temporary file")?;
     }
 
     Ok(())
@@ -293,7 +291,9 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
 
         // Compress pixel data using Flate compression
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-        encoder.write_all(&page.pixels).context("Failed to compress pixel data")?;
+        encoder
+            .write_all(&page.pixels)
+            .context("Failed to compress pixel data")?;
         let compressed_pixels = encoder.finish().context("Failed to finish compression")?;
 
         pdf_data.extend_from_slice(b"/Filter /FlateDecode\n");
@@ -346,7 +346,9 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
     pdf_data.extend_from_slice(format!("{}\n", xref_offset).as_bytes());
     pdf_data.extend_from_slice(b"%%EOF\n");
 
-    writer.write_all(&pdf_data).context("Failed to write PDF data")?;
+    writer
+        .write_all(&pdf_data)
+        .context("Failed to write PDF data")?;
     Ok(())
 }
 
@@ -368,12 +370,7 @@ pub fn apply_ocr_fn(input_pdf: String, output_pdf: String) -> Result<()> {
 
     // Fall back to ocrmypdf (for non-macOS or if PDFKit fails)
     let output = Command::new("ocrmypdf")
-        .args([
-            "--skip-text",
-            "--force-ocr",
-            &input_pdf,
-            &output_pdf,
-        ])
+        .args(["--skip-text", "--force-ocr", &input_pdf, &output_pdf])
         .output();
 
     match output {
@@ -385,16 +382,14 @@ pub fn apply_ocr_fn(input_pdf: String, output_pdf: String) -> Result<()> {
             let stderr = String::from_utf8_lossy(&result.stderr);
             eprintln!("Warning: OCR failed: {}", stderr);
             eprintln!("Falling back to PDF without OCR");
-            std::fs::copy(&input_pdf, &output_pdf)
-                .context("Failed to copy PDF")?;
+            std::fs::copy(&input_pdf, &output_pdf).context("Failed to copy PDF")?;
             Ok(())
         }
         Err(e) => {
             eprintln!("Warning: ocrmypdf not found or failed: {}", e);
             eprintln!("Falling back to PDF without OCR");
             eprintln!("To enable OCR, install ocrmypdf: pip install ocrmypdf");
-            std::fs::copy(&input_pdf, &output_pdf)
-                .context("Failed to copy PDF")?;
+            std::fs::copy(&input_pdf, &output_pdf).context("Failed to copy PDF")?;
             Ok(())
         }
     }
