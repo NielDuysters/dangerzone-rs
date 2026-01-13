@@ -38,3 +38,4 @@ Issues = "https://github.com/almet/dangerzone-rs/issues"
 
 [tool.maturin]
 module-name = "dangerzone_rs"
+features = ["python"]

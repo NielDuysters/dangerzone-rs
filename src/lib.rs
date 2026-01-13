@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use pyo3::prelude::*;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
@@ -36,20 +35,14 @@ fn read_u16_be(data: &[u8]) -> Result<u16> {
 }
 
 /// Page data structure representing a single page's pixel information
-#[pyclass]
 #[derive(Clone)]
 pub struct PageData {
-    #[pyo3(get)]
     pub width: u16,
-    #[pyo3(get)]
     pub height: u16,
-    #[pyo3(get)]
     pub pixels: Vec<u8>,
 }
 
-#[pymethods]
 impl PageData {
-    #[new]
     pub fn new(width: u16, height: u16, pixels: Vec<u8>) -> Self {
         PageData {
             width,
@@ -443,6 +436,7 @@ fn apply_ocr_macos(input_pdf: &str, output_pdf: &str) -> Result<()> {
 
 /// Python bindings module
 /// Re-exports from the python module to make them available to PyO3
+#[cfg(feature = "python")]
 pub mod python;
 
 #[cfg(test)]
