@@ -2,7 +2,8 @@
 
 [![CI](https://github.com/almet/dangerzone-rs/workflows/CI/badge.svg)](https://github.com/almet/dangerzone-rs/actions)
 
-> **Warning**: This project is experimental and should not be used in production.
+> [!WARNING]
+> This project is experimental and should not be used in production.
 > For production use, please use the official [Dangerzone](https://dangerzone.rocks) implementation.
 
 A minimal Rust implementation of [Dangerzone](https://dangerzone.rocks) that
