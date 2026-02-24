@@ -43,6 +43,11 @@ jobs:
     
     - name: Run clippy
       run: cargo clippy --all-targets -- -D warnings
-    
+
+    - name: Audit crates
+      run: |
+        cargo install cargo-audit --locked
+        cargo audit -D warnings
+
     - name: Build project
       run: cargo build --release
