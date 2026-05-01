@@ -45,12 +45,8 @@ dangerzone-rs --input unsafe.pdf --output safe.pdf --ocr
 
 **Note on OCR**:
 
-- On **macOS**, the tool uses PDFKit's built-in `saveTextFromOCROption` for
-  OCR, which is faster and doesn't require additional dependencies.
-- On **other platforms**, OCR can be enabled by installing `ocrmypdf`:
-  ```bash
-  pip install ocrmypdf
-  ```
+OCR uses the integrated Tesseract backend and writes the text layer directly
+into the generated safe PDF.
 
 ### Python Library
 
@@ -82,10 +78,6 @@ python demo/demo.py
   ```bash
   podman pull ghcr.io/freedomofpress/dangerzone/v1
   ```
-- **ocrmypdf** (optional): For OCR on non-macOS platforms:
-  ```bash
-  pip install ocrmypdf
-  ```
 
 ## Prerequisites (CLI)
 
@@ -112,6 +104,13 @@ Available platforms:
 - Windows (x86_64)
 
 #### Build from Source
+
+**Prerequisites:**
+For static linking the `kreuzberg-tesseract` crate you need to have:
+
+- A C++ compiler (e.g., gcc, clang, MSVC on Windows)
+- CMake 3.x or later
+- Internet connection (for downloading Tesseract source code)
 
 ```bash
 cargo build --release

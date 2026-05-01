@@ -1,11 +1,14 @@
+// TODO: A library shouldn't use anyhow::Result. Use e.g thiserror instead.
 use anyhow::{Context, Result};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use ocr::OcrBackend;
 use std::fs::File;
 use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
 use std::process::{Command, Stdio};
 use util::replace_control_chars;
 
+mod ocr;
 mod util;
 
 pub const IMAGE_NAME: &str = "ghcr.io/freedomofpress/dangerzone/v1";
@@ -238,15 +241,7 @@ pub fn convert_doc_to_pixels(input_path: String) -> Result<Vec<u8>> {
 pub fn pixels_to_pdf(pages: Vec<PageData>, output_path: String) -> Result<()> {
     eprintln!("Converting pixels to safe PDF...");
 
-    if pages.is_empty() {
-        anyhow::bail!("No pages to convert");
-    }
-
-    let mut file = File::create(&output_path).context(format!(
-        "Failed to create output file '{output_path_sanitized}'",
-        output_path_sanitized = replace_control_chars(&output_path, false)
-    ))?;
-    write_pdf(&mut file, &pages).context("Failed to write PDF")?;
+    write_pages_to_pdf_file(&pages, None, &output_path, "Failed to write PDF")?;
 
     eprintln!(
         "Safe PDF created successfully at: {output_path_sanitized}",
@@ -255,31 +250,80 @@ pub fn pixels_to_pdf(pages: Vec<PageData>, output_path: String) -> Result<()> {
     Ok(())
 }
 
-/// Convert a document to a safe PDF in one call
-pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool) -> Result<()> {
-    let pixels_data = convert_doc_to_pixels(input_path)?;
-    let pages = parse_pixel_data(pixels_data)?;
+/// Convert pixel data to a PDF file and add the provided OCR text layer
+fn pixels_to_pdf_with_ocr(
+    pages: &[PageData],
+    ocr_pages: &[ocr::OcrPage],
+    output_path: &str,
+) -> Result<()> {
+    eprintln!("Converting pixels to safe PDF with OCR text layer...");
 
-    let temp_output = if apply_ocr {
-        format!("{output_path}.temp.pdf")
-    } else {
-        output_path.clone()
-    };
+    write_pages_to_pdf_file(
+        pages,
+        Some(ocr_pages),
+        output_path,
+        "Failed to write PDF with OCR",
+    )?;
 
-    pixels_to_pdf(pages.clone(), temp_output.clone()).context("Failed to convert pixels to PDF")?;
-
-    if apply_ocr {
-        apply_ocr_fn(temp_output.clone(), output_path.clone())?;
-        std::fs::remove_file(&temp_output).context("Failed to remove temporary file")?;
-    }
-
+    eprintln!(
+        "Safe PDF with OCR created successfully at: {output_path_sanitized}",
+        output_path_sanitized = replace_control_chars(output_path, false)
+    );
     Ok(())
 }
 
+fn write_pages_to_pdf_file(
+    pages: &[PageData],
+    ocr_pages: Option<&[ocr::OcrPage]>,
+    output_path: &str,
+    write_context: &'static str,
+) -> Result<()> {
+    if pages.is_empty() {
+        anyhow::bail!("No pages to convert");
+    }
+
+    let mut file = File::create(output_path).context(format!(
+        "Failed to create output file '{output_path_sanitized}'",
+        output_path_sanitized = replace_control_chars(output_path, false)
+    ))?;
+    write_pdf(&mut file, pages, ocr_pages).context(write_context)
+}
+
+/// Convert a document to a safe PDF in one call
+pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool) -> Result<()> {
+    if apply_ocr {
+        return apply_ocr_fn(input_path, output_path);
+    }
+
+    let pixels_data = convert_doc_to_pixels(input_path)?;
+    let pages = parse_pixel_data(pixels_data)?;
+
+    pixels_to_pdf(pages, output_path).context("Failed to convert pixels to PDF")
+}
+
 /// Write a minimal PDF file with embedded RGB pixel data
-fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
+fn write_pdf<W: Write>(
+    writer: &mut W,
+    pages: &[PageData],
+    ocr_pages: Option<&[ocr::OcrPage]>,
+) -> Result<()> {
+    if let Some(ocr_pages) = ocr_pages {
+        if ocr_pages.len() != pages.len() {
+            anyhow::bail!(
+                "OCR page count ({}) does not match PDF page count ({})",
+                ocr_pages.len(),
+                pages.len()
+            );
+        }
+    }
+
     let mut pdf_data = Vec::new();
     let mut object_offsets = Vec::new();
+    let has_ocr = ocr_pages.is_some();
+
+    // If OCR is used, objects 3 - 6 are used for embedding the OCR glyphless font.
+    // For pure image based documents, the first object is still located at index 3.
+    let first_object_on_first_page_index = if has_ocr { 7 } else { 3 };
 
     // PDF Header
     pdf_data.extend_from_slice(b"%PDF-1.4\n");
@@ -303,7 +347,11 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
     // Build kids array
     let mut kids = String::from("/Kids [");
     for i in 0..pages.len() {
-        kids.push_str(&format!("{} 0 R ", 3 + i * 2));
+        // Dynamically reference first `/Type /Page` object depending on if OCR is used.
+        kids.push_str(&format!(
+            "{} 0 R ",
+            first_object_on_first_page_index + i * 2
+        ));
     }
     kids.push_str("]\n");
     pdf_data.extend_from_slice(kids.as_bytes());
@@ -311,6 +359,13 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
     pdf_data.extend_from_slice(format!("/Count {}\n", pages.len()).as_bytes());
     pdf_data.extend_from_slice(b">>\n");
     pdf_data.extend_from_slice(b"endobj\n");
+
+    // If OCR is used, embed our OCR font objects into the PDF.
+    if has_ocr {
+        ocr::pdf_renderer::embed_ocr_font(&mut pdf_data, &mut object_offsets)?;
+    }
+
+    let first_content_object_index_curr_page = first_object_on_first_page_index + pages.len() * 2;
 
     // For each page, create a Page object and an Image XObject
     for (page_idx, page) in pages.iter().enumerate() {
@@ -321,7 +376,7 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
         let height_pts = (page.height as f32) / DPI * 72.0;
 
         // Page object
-        let page_obj_num = 3 + page_idx * 2;
+        let page_obj_num = first_object_on_first_page_index + page_idx * 2;
         let image_obj_num = page_obj_num + 1;
 
         object_offsets.push(pdf_data.len());
@@ -336,11 +391,21 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
         pdf_data.extend_from_slice(
             format!("  /XObject << /Im{page_idx} {image_obj_num} 0 R >>\n").as_bytes(),
         );
+
+        // If OCR is used reference to object 3 containing the Type0 font as used font.
+        if has_ocr {
+            pdf_data.extend_from_slice(b"  /Font << /OcrFont 3 0 R >>\n");
+        }
+
         pdf_data.extend_from_slice(b">>\n");
 
         // Reference to content stream object
         pdf_data.extend_from_slice(
-            format!("/Contents {} 0 R\n", 3 + pages.len() * 2 + page_idx).as_bytes(),
+            format!(
+                "/Contents {} 0 R\n",
+                first_content_object_index_curr_page + page_idx
+            )
+            .as_bytes(),
         );
         pdf_data.extend_from_slice(b">>\n");
         pdf_data.extend_from_slice(b"endobj\n");
@@ -376,10 +441,14 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
     for (page_idx, page) in pages.iter().enumerate() {
         let width_pts = (page.width as f32) / DPI * 72.0;
         let height_pts = (page.height as f32) / DPI * 72.0;
-        let content =
+        let mut content =
             format!("q\n{width_pts:.2} 0 0 {height_pts:.2} 0 0 cm\n/Im{page_idx} Do\nQ\n");
 
-        let content_obj_num = 3 + pages.len() * 2 + page_idx;
+        if let Some(ocr_page) = ocr_pages.and_then(|pages| pages.get(page_idx)) {
+            ocr::pdf_renderer::append_ocr_text_layer(&mut content, ocr_page, height_pts);
+        }
+
+        let content_obj_num = first_content_object_index_curr_page + page_idx;
         object_offsets.push(pdf_data.len());
         pdf_data.extend_from_slice(format!("{content_obj_num} 0 obj\n").as_bytes());
         pdf_data.extend_from_slice(b"<<\n");
@@ -417,111 +486,25 @@ fn write_pdf<W: Write>(writer: &mut W, pages: &[PageData]) -> Result<()> {
     Ok(())
 }
 
-/// Apply OCR to add text layer to PDF (platform-aware)
-pub fn apply_ocr_fn(input_pdf: String, output_pdf: String) -> Result<()> {
-    eprintln!("Applying OCR to PDF...");
+/// Convert a document to a safe PDF and add an OCR text layer.
+// TODO: When having the implementations for Apple Vision and windows.media.ocr
+// I want to use conditional compilation flags to dynamically set the OCR backend.
+// This way `apply_ocr_fn` should be platform aware.
+pub fn apply_ocr_fn(input_path: String, output_path: String) -> Result<()> {
+    eprintln!("Applying OCR with integrated backend...");
 
-    // On macOS, try using PDFKit's saveTextFromOCROption first
-    #[cfg(target_os = "macos")]
-    {
-        match apply_ocr_macos(&input_pdf, &output_pdf) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                eprintln!(
-                    "Warning: macOS PDFKit OCR failed: {stderr_sanitized}",
-                    stderr_sanitized = replace_control_chars(&e.to_string(), true)
-                );
-                eprintln!("Falling back to ocrmypdf...");
-            }
-        }
-    }
+    let pixels_data = convert_doc_to_pixels(input_path)?;
+    let pages = parse_pixel_data(pixels_data)?;
 
-    // Fall back to ocrmypdf (for non-macOS or if PDFKit fails)
-    let output = Command::new("ocrmypdf")
-        .args([&input_pdf, &output_pdf])
-        .output();
+    let backend =
+        ocr::KreuzbergTesseractOcr::new().context("Failed to initialize integrated OCR backend")?;
+    let ocr_pages = backend
+        .ocr_pages(&pages)
+        .context("Failed to run integrated OCR backend")?;
 
-    match output {
-        Ok(result) if result.status.success() => {
-            eprintln!("OCR applied successfully");
-            Ok(())
-        }
-        Ok(result) => {
-            let stderr = String::from_utf8_lossy(&result.stderr);
-            eprintln!(
-                "Warning: OCR failed: {stderr_sanitized}",
-                stderr_sanitized = replace_control_chars(&stderr, true)
-            );
-            eprintln!("Falling back to PDF without OCR");
-            std::fs::copy(&input_pdf, &output_pdf).context("Failed to copy PDF")?;
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Warning: ocrmypdf not found or failed: {e}");
-            eprintln!("Falling back to PDF without OCR");
-            eprintln!("To enable OCR, install ocrmypdf: pip install ocrmypdf");
-            std::fs::copy(&input_pdf, &output_pdf).context("Failed to copy PDF")?;
-            Ok(())
-        }
-    }
+    pixels_to_pdf_with_ocr(&pages, &ocr_pages, &output_path)
+        .context("Failed to convert pixels to OCR PDF")
 }
-
-#[cfg(target_os = "macos")]
-fn apply_ocr_macos(input_pdf: &str, output_pdf: &str) -> Result<()> {
-    eprintln!("Using macOS PDFKit for OCR...");
-
-    let script_path = if let Ok(exe_path) = std::env::current_exe() {
-        let mut path = exe_path.parent().unwrap().to_path_buf();
-        path.push("macos_ocr.swift");
-        if path.exists() {
-            path
-        } else {
-            std::path::PathBuf::from("src/macos_ocr.swift")
-        }
-    } else {
-        std::path::PathBuf::from("src/macos_ocr.swift")
-    };
-
-    if !script_path.exists() {
-        anyhow::bail!("macOS OCR script not found at {:?}", script_path);
-    }
-
-    let input_absolute = std::fs::canonicalize(input_pdf).with_context(|| {
-        format!(
-            "Failed to get absolute path for input: {input_pdf_sanitized}",
-            input_pdf_sanitized = replace_control_chars(input_pdf, false)
-        )
-    })?;
-    let output_absolute = std::path::Path::new(output_pdf)
-        .canonicalize()
-        .unwrap_or_else(|_| {
-            let output_path = std::path::Path::new(output_pdf);
-            if output_path.is_absolute() {
-                output_path.to_path_buf()
-            } else {
-                std::env::current_dir().unwrap().join(output_path)
-            }
-        });
-
-    let output = Command::new("swift")
-        .arg(&script_path)
-        .arg(&input_absolute)
-        .arg(&output_absolute)
-        .output()
-        .context("Failed to execute Swift OCR script")?;
-
-    if output.status.success() {
-        eprintln!("OCR applied successfully using macOS PDFKit");
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "Swift OCR script failed: {stderr_sanitized}",
-            stderr_sanitized = replace_control_chars(&stderr, true)
-        )
-    }
-}
-
 /// Python bindings module
 /// Re-exports from the python module to make them available to PyO3
 #[cfg(feature = "python")]
@@ -591,7 +574,7 @@ mod tests {
         let pages = vec![page];
 
         let mut buffer = Cursor::new(Vec::new());
-        let result = write_pdf(buffer.get_mut(), &pages);
+        let result = write_pdf(buffer.get_mut(), &pages, None);
         assert!(result.is_ok(), "PDF generation should succeed");
 
         let pdf_data = buffer.into_inner();
@@ -647,7 +630,7 @@ mod tests {
         let pages = vec![page];
 
         let mut buffer = Cursor::new(Vec::new());
-        let result = write_pdf(buffer.get_mut(), &pages);
+        let result = write_pdf(buffer.get_mut(), &pages, None);
         assert!(result.is_ok(), "PDF generation should succeed");
 
         let pdf_data = buffer.into_inner();
@@ -671,20 +654,70 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_os = "macos")]
-    fn test_macos_ocr_function_compiles() {
-        use std::io::Write;
-        use tempfile::NamedTempFile;
+    fn test_pdf_generation_with_hidden_ocr_text() {
+        use std::io::Cursor;
 
-        let mut temp_input = NamedTempFile::new().unwrap();
-        temp_input.write_all(b"%PDF-1.4\n%%EOF\n").unwrap();
-        let input_path = temp_input.path().to_str().unwrap();
+        let width = 10u16;
+        let height = 10u16;
+        let page = PageData {
+            width,
+            height,
+            pixels: vec![255; width as usize * height as usize * 3],
+        };
+        let pages = vec![page];
+        let ocr_pages = vec![ocr::OcrPage::from_test_words(vec![(
+            "hello (pdf)",
+            1,
+            2,
+            3,
+            4,
+        )])];
 
-        let temp_output = NamedTempFile::new().unwrap();
-        let output_path = temp_output.path().to_str().unwrap();
+        let mut buffer = Cursor::new(Vec::new());
+        let result = write_pdf(buffer.get_mut(), &pages, Some(&ocr_pages));
+        assert!(result.is_ok(), "PDF generation with OCR should succeed");
 
-        let result = apply_ocr_macos(input_path, output_path);
-        assert!(result.is_err());
+        let pdf_data = String::from_utf8_lossy(&buffer.into_inner()).into_owned();
+        assert!(
+            pdf_data.contains("/Font << /OcrFont"),
+            "PDF should include OCR font resource"
+        );
+        assert!(
+            pdf_data.contains("3 Tr"),
+            "PDF should use invisible text rendering mode"
+        );
+        assert!(
+            pdf_data.contains("<00680065006C006C006F002000280070006400660029> Tj"),
+            "PDF should contain UTF-16BE hex OCR text"
+        );
+        assert!(
+            pdf_data.contains(" Tz\n"),
+            "PDF should set horizontal text scaling for OCR width alignment"
+        );
+
+        // Verify that each /Contents reference points to an existing object.
+        let mut content_refs = Vec::new();
+        for line in pdf_data.lines() {
+            if let Some(rest) = line.strip_prefix("/Contents ") {
+                let obj_num: usize = rest
+                    .split_whitespace()
+                    .next()
+                    .expect("contents object number")
+                    .parse()
+                    .expect("valid contents object number");
+                content_refs.push(obj_num);
+            }
+        }
+        assert!(
+            !content_refs.is_empty(),
+            "PDF should include /Contents references"
+        );
+        for obj_num in content_refs {
+            assert!(
+                pdf_data.contains(&format!("{obj_num} 0 obj")),
+                "Missing content object for /Contents reference: {obj_num} 0 R"
+            );
+        }
     }
 
     #[test]
