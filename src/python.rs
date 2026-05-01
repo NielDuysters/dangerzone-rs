@@ -87,8 +87,8 @@ fn convert_document(input_path: String, output_path: String, apply_ocr: bool) ->
 
 /// Wrapper for apply_ocr_fn that converts Result to PyResult
 #[pyfunction]
-fn apply_ocr_fn(input_pdf: String, output_pdf: String) -> PyResult<()> {
-    core_apply_ocr_fn(input_pdf, output_pdf)
+fn apply_ocr_fn(input_path: String, output_path: String) -> PyResult<()> {
+    core_apply_ocr_fn(input_path, output_path)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
 }
 
