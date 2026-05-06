@@ -171,6 +171,16 @@ impl KreuzbergTesseractOcr {
             path.join("tessdata")
         }
     }
+    
+    /// Extract PDF words and their properties.
+    ///
+    /// Required to construct OcrWord's. We use Tesseract's low-level iterator since it provides
+    /// more details.
+    pub(crate) fn extract_pdf_words(iterator: &kreuzberg_tesseract::ResultIterator) -> Vec<OcrWord> {
+
+
+        unimplemented!()
+    }
 }
 
 impl OcrBackend for KreuzbergTesseractOcr {
@@ -248,11 +258,13 @@ impl OcrBackend for KreuzbergTesseractOcr {
                 .collect(),
         )
     }
+
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
 
     struct FakeOcrBackend;
 
