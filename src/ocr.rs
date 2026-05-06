@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::PageData;
 use kreuzberg_tesseract::{Pix, TesseractAPI, TessPageIteratorLevel};
 use std::os::raw::{c_char, c_int, c_void};
+use std::ffi::CStr;
 
 /// DPI used by container
 pub const DEFAULT_DPI: i32 = 150;
@@ -361,6 +362,24 @@ fn fallback_baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> OcrVBase
     bounding_box(raw, level)
         .map(| vbox| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h))
         .unwrap_or_else(|| OcrVBaseline::new(0, 0, 0, 0))
+}
+
+/// Get text returned by tesseract.
+fn utf8_text(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<String> {
+    // Retrieve text
+    let text_ptr = unsafe { TessResultIteratorGetUTF8Text(raw, level as c_int) };
+    if text_ptr.is_null() {
+        return None;
+    }
+    // Transfer ownership to caller.
+    let text = unsafe { CStr::from_ptr(text_ptr) }
+        .to_str()
+        .ok()
+        .map(str::to_string);
+
+    // Free pointer.
+    unsafe { TessDeleteText(text_ptr) };
+    text
 }
 
 // Raw Tesseract C API calls that are not currently surfaced by
