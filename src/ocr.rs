@@ -217,6 +217,16 @@ impl KreuzbergTesseractOcr {
             } != 0 {
                 block_id += 1;
             }
+
+            // Store text-level baseline when the iterator goes into next line.
+            // A line-level baseline is used as reference for rotated/skewed text.
+            if unsafe {
+                TessPageIteratorIsAtBeginningOf(raw, TessPageIteratorLevel::RIL_TEXTLINE as c_int)
+            } != 0 {
+                line_id += 1;
+                curr_line_baseline = baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE)
+                .unwrap_or_else(|| fallback_baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE));
+            }
         }
 
         unimplemented!()
