@@ -33,6 +33,21 @@ pub(crate) struct OcrVBox {
     h: i32,
 }
 
+/// Baseline reported by OCR in source image pixel
+///
+/// Tesseract use baselines instead of only relying on word boxes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OcrVBaseline {
+    /// Top-left X-coordinate
+    x1: i32,
+    /// Top-left Y-coordinate
+    y1: i32,
+    /// Bottom-right X-coordinate
+    x2: i32,
+    /// Bottom-right Y-coordinate
+    y2: i32,
+}
+
 /// Object for each word on a page
 ///
 /// We use word-level granularity for OCR. The text-content of a
