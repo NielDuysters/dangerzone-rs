@@ -305,6 +305,54 @@ impl OcrBackend for KreuzbergTesseractOcr {
 // TODO: We will revisit our project structure to put
 // the following code in a separate module.
 
+// Helper methods for tesseract.
+
+/// Bounding boxes come back as top, left, right, bottom.
+/// We convert it to our OcrVBox object.
+fn bounding_box(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<OcrVBox> {
+    let mut left = 0;
+    let mut top = 0;
+    let mut right = 0;
+    let mut bottom = 0;
+    let ok = unsafe {
+        TessPageIteratorBoundingBox(
+            raw,
+            level as c_int,
+            &mut left,
+            &mut top,
+            &mut right,
+            &mut bottom,
+        )
+    };
+    (ok != 0).then_some(OcrVBox {
+        x: left,
+        y: top,
+        w: right - left,
+        h: bottom - top,
+    })
+}
+
+/// Baselines are returned as two points in image pixels. They may be angled
+/// if Tesseract detected skew or rotated text.
+fn baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<OcrVBaseline> {
+    let mut x1 = 0;
+    let mut y1 = 0;
+    let mut x2 = 0;
+    let mut y2 = 0;
+    let ok = unsafe {
+        TessPageIteratorBaseline(raw, level as c_int, &mut x1, &mut y1, &mut x2, &mut y2)
+    };
+    (ok != 0).then_some(OcrVBaseline::new(x1, y1, x2, y2))
+}
+
+/// When Tesseract cannot provide a baseline, use the bottom edge of the
+/// bounding box.
+fn fallback_baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> OcrVBaseline {
+    bounding_box(raw, level)
+        .map(| vbox| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h))
+        .unwrap_or_else(|| OcrVBaseline::new(0, 0, 0, 0))
+}
+
 // Raw Tesseract C API calls that are not currently surfaced by
 // `kreuzberg-tesseract`'s safe Rust API.
 unsafe extern "C-unwind" {
