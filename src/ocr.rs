@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use crate::PageData;
-use kreuzberg_tesseract::{Pix, TesseractAPI};
+use kreuzberg_tesseract::{Pix, TesseractAPI, TessPageIteratorLevel};
 use std::os::raw::{c_char, c_int, c_void};
 
 /// DPI used by container
@@ -203,7 +203,8 @@ impl KreuzbergTesseractOcr {
         let mut curr_line_baseline = OcrVBaseline::new(0,0,0,0);
         let mut curr_writing_direction = OcrWritingDirection::LTR;
 
-        
+        // Reset iterator to first word on page
+        unsafe { TessPageIteratorBegin(raw) };
 
         unimplemented!()
     }
