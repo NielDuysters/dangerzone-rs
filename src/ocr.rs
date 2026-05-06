@@ -206,6 +206,19 @@ impl KreuzbergTesseractOcr {
         // Reset iterator to first word on page
         unsafe { TessPageIteratorBegin(raw) };
 
+        // Loop over words on page
+        loop {
+            // Tesseract has moved to a new visual element
+            //
+            // Update block_id to prevent the PDF writer to join/mix
+            // text that should remain separated.
+            if unsafe {
+                TessPageIteratorIsAtBeginningOf(raw, TessPageIteratorLevel::RIL_BLOCK as c_int)
+            } != 0 {
+                block_id += 1;
+            }
+        }
+
         unimplemented!()
     }
 }
