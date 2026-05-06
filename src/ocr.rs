@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::PageData;
 use kreuzberg_tesseract::{Pix, TesseractAPI};
+use std::os::raw::{c_char, c_int, c_void};
 
 /// DPI used by container
 pub const DEFAULT_DPI: i32 = 150;
@@ -202,6 +203,8 @@ impl KreuzbergTesseractOcr {
         let mut curr_line_baseline = OcrVBaseline::new(0,0,0,0);
         let mut curr_writing_direction = OcrWritingDirection::LTR;
 
+        
+
         unimplemented!()
     }
 }
@@ -282,6 +285,56 @@ impl OcrBackend for KreuzbergTesseractOcr {
         )
     }
 
+}
+
+
+// TODO: We will revisit our project structure to put
+// the following code in a separate module.
+
+// Raw Tesseract C API calls that are not currently surfaced by
+// `kreuzberg-tesseract`'s safe Rust API.
+unsafe extern "C-unwind" {
+    fn TessDeleteText(text: *mut c_char);
+    fn TessPageIteratorBegin(handle: *mut c_void);
+    fn TessPageIteratorIsAtBeginningOf(handle: *mut c_void, level: c_int) -> c_int;
+    fn TessPageIteratorIsAtFinalElement(handle: *mut c_void, level: c_int, element: c_int)
+        -> c_int;
+    fn TessPageIteratorBoundingBox(
+        handle: *mut c_void,
+        level: c_int,
+        left: *mut c_int,
+        top: *mut c_int,
+        right: *mut c_int,
+        bottom: *mut c_int,
+    ) -> c_int;
+    fn TessPageIteratorBaseline(
+        handle: *mut c_void,
+        level: c_int,
+        x1: *mut c_int,
+        y1: *mut c_int,
+        x2: *mut c_int,
+        y2: *mut c_int,
+    ) -> c_int;
+    fn TessPageIteratorOrientation(
+        handle: *mut c_void,
+        orientation: *mut c_int,
+        writing_direction: *mut c_int,
+        textline_order: *mut c_int,
+        deskew_angle: *mut f32,
+    );
+    fn TessResultIteratorGetUTF8Text(handle: *mut c_void, level: c_int) -> *mut c_char;
+    fn TessResultIteratorNext(handle: *mut c_void, level: c_int) -> c_int;
+    fn TessResultIteratorWordFontAttributes(
+        handle: *mut c_void,
+        is_bold: *mut c_int,
+        is_italic: *mut c_int,
+        is_underlined: *mut c_int,
+        is_monospace: *mut c_int,
+        is_serif: *mut c_int,
+        is_smallcaps: *mut c_int,
+        pointsize: *mut c_int,
+        font_id: *mut c_int,
+    ) -> c_int;
 }
 
 #[cfg(test)]
