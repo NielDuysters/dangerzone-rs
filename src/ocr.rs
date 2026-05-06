@@ -48,6 +48,15 @@ pub(crate) struct OcrVBaseline {
     pub y2: i32,
 }
 
+impl OcrVBaseline {
+    /// Helper method to construct
+    pub fn new(x1: i32, y1: i32, x2: i32, y2: i32) -> Self {
+        Self {
+            x1, y1, x2, y2
+        }
+    }
+}
+
 /// Object for each word on a page
 ///
 /// We use word-level granularity for OCR.
@@ -178,6 +187,20 @@ impl KreuzbergTesseractOcr {
     /// more details.
     pub(crate) fn extract_pdf_words(iterator: &kreuzberg_tesseract::ResultIterator) -> Vec<OcrWord> {
 
+        // Get raw handle
+        let Ok(handle) = iterator.handle.lock() else {
+            return Vec::new();
+        };
+        let raw = *handle;
+
+        // Vector containing results we will return
+        let mut ocr_words : Vec<OcrWord> = Vec::new();
+
+        // Helper properties used when looping over iterator
+        let mut block_id: usize = 0;
+        let mut line_id: usize = 0;
+        let mut curr_line_baseline = OcrVBaseline::new(0,0,0,0);
+        let mut curr_writing_direction = OcrWritingDirection::LTR;
 
         unimplemented!()
     }
