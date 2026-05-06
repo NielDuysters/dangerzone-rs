@@ -24,13 +24,13 @@ pub(crate) enum OcrWritingDirection {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OcrVBox {
     /// X-coordinate
-    x: i32,
+    pub x: i32,
     /// Y-coordinate
-    y: i32,
+    pub y: i32,
     /// Width
-    w: i32,
+    pub w: i32,
     /// Height
-    h: i32,
+    pub h: i32,
 }
 
 /// Baseline reported by OCR in source image pixel
@@ -39,59 +39,46 @@ pub(crate) struct OcrVBox {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct OcrVBaseline {
     /// Top-left X-coordinate
-    x1: i32,
+    pub x1: i32,
     /// Top-left Y-coordinate
-    y1: i32,
+    pub y1: i32,
     /// Bottom-right X-coordinate
-    x2: i32,
+    pub x2: i32,
     /// Bottom-right Y-coordinate
-    y2: i32,
+    pub y2: i32,
 }
 
 /// Object for each word on a page
 ///
-/// We use word-level granularity for OCR. The text-content of a
-/// word is wrapped in this object together with the positioning
-/// and sizing properties.
+/// We use word-level granularity for OCR.
+/// The fields in this struct are richer then storing only
+/// the text and coordinates + sizing properties since that isn't
+/// sufficient to do precise OCR.
 #[derive(Debug)]
 pub(crate) struct OcrWord {
-    /// Text-content of the word
-    text: String,
-    /// x-axis positioning
-    x: i32,
-    /// y-axis positioning
-    y: i32,
-    /// Width of the word-box
-    w: i32,
-    /// Height of the word-box
-    h: i32,
-}
-
-impl OcrWord {
-    /// Get text-content of word
-    pub(crate) fn text(&self) -> &str {
-        &self.text
-    }
-
-    /// Get x-axis positioning
-    pub(crate) fn x(&self) -> i32 {
-        self.x
-    }
-
-    /// Get y-axis positioning
-    pub(crate) fn y(&self) -> i32 {
-        self.y
-    }
-
-    /// Get width of word-box
-    pub(crate) fn w(&self) -> i32 {
-        self.w
-    }
-
-    /// Get height of word-box
-    pub(crate) fn h(&self) -> i32 {
-        self.h
-    }
+    /// Text recognized by the OCR
+    pub text: String,
+    /// Coordinates + sizing properties
+    pub vbox: OcrVBox,
+    /// Index of text-block this word belongs to
+    ///
+    /// Used to avoid mixing words from different blocks into one
+    pub block_id: usize,
+    /// Index of the line this word belongs to
+    pub line_id: usize,
+    /// Baseline of this word in source image pixel
+    pub vbaseline: OcrVBaseline,
+    /// Baseline of the wrapping line this word belongs to
+    ///
+    /// We duplicate/denormalize this data over the multiple words from a line
+    /// to allow easier handling.
+    pub line_vbaseline: OcrVBaseline,
+    /// Reported font-size
+    pub font_size: i32,
+    /// Reported writing direction
+    pub writing_direction: OcrWritingDirection,
+    /// Flag determining if this word is the last in the line
+    pub last_in_line: bool,
 }
 
 /// Object for each page in a document
