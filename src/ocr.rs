@@ -20,6 +20,19 @@ pub(crate) enum OcrWritingDirection {
     RTL,
 }
 
+/// Object holding coordinates and size data of OCR object
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct OcrVBox {
+    /// X-coordinate
+    x: i32,
+    /// Y-coordinate
+    y: i32,
+    /// Width
+    w: i32,
+    /// Height
+    h: i32,
+}
+
 /// Object for each word on a page
 ///
 /// We use word-level granularity for OCR. The text-content of a
