@@ -8,6 +8,18 @@ use kreuzberg_tesseract::{Pix, TesseractAPI};
 /// DPI used by container
 pub const DEFAULT_DPI: i32 = 150;
 
+/// Writing direction used to do OCR
+///
+/// Used to decide the text matrix to calculate the coordinates
+/// of objects in the PDF.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum OcrWritingDirection {
+    /// Left-to-right
+    LTR,
+    /// Right-to-left
+    RTL,
+}
+
 /// Object for each word on a page
 ///
 /// We use word-level granularity for OCR. The text-content of a
