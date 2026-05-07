@@ -266,6 +266,11 @@ impl KreuzbergTesseractOcr {
                 
                 continue;
             };
+
+            // Set word_baseline. Fall back to horizontal line at
+            // bottom of word-box is missing.
+            let word_baseline = baseline(raw, TessPageIteratorLevel::RIL_WORD)
+                .unwrap_or_else(|| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h));
         }
 
         unimplemented!()
