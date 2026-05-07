@@ -255,6 +255,17 @@ impl KreuzbergTesseractOcr {
                 continue;
             }
 
+            // Check if word has a bounding_box. Ignore if it doesn't to avoid poisoning whole OCR
+            // result.
+            let Some(vbox) = bounding_box(raw, TessPageIteratorLevel::RIL_WORD) else {
+                if unsafe {
+                    TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
+                } == 0 {
+                    break;
+                }
+                
+                continue;
+            };
         }
 
         unimplemented!()
