@@ -217,7 +217,7 @@ fn ocr_text_lines(words: &[OcrWord]) -> Vec<OcrTextLine<'_>> {
 fn sort_ocr_line_words(words: &mut [&OcrWord]) {
     if words
         .first()
-        .is_some_and(|word| word.writing_direction == OcrWritingDirection::RTL)
+        .is_some_and(|word| word.writing_direction == OcrWritingDirection::Rtl)
     {
         words.sort_by_key(|word| std::cmp::Reverse(word.vbox.x));
     } else {
@@ -268,8 +268,8 @@ fn word_baseline_position(
     page_height_pts: f32,
 ) -> (f32, f32, f32) {
     let mut word_baseline = word.vbaseline;
-    if word.writing_direction == OcrWritingDirection::RTL {
-        // For RTL text the visual start of the word is the opposite baseline
+    if word.writing_direction == OcrWritingDirection::Rtl {
+        // For Rtl text the visual start of the word is the opposite baseline
         // endpoint. Flip before projection so the text matrix starts on the
         // side where the PDF text should begin advancing.
         word_baseline = OcrVBaseline::new(
@@ -333,7 +333,7 @@ fn word_baseline_position(
 /// Calculate the 2x2 part of the PDF text matrix from an OCR line baseline.
 ///
 /// The matrix rotates hidden text onto the same angle Tesseract detected in the
-/// raster image. For RTL text, the horizontal advance is reflected.
+/// raster image. For Rtl text, the horizontal advance is reflected.
 fn affine_matrix(
     direction: OcrWritingDirection,
     line_baseline: OcrVBaseline,
@@ -355,7 +355,7 @@ fn affine_matrix(
     let c = -theta.sin();
     let d = theta.cos();
 
-    if direction == OcrWritingDirection::RTL {
+    if direction == OcrWritingDirection::Rtl {
         // Reflect the text advance for right-to-left lines while preserving the
         // baseline angle.
         a = -a;

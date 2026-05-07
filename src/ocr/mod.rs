@@ -16,9 +16,9 @@ pub const DEFAULT_DPI: i32 = 150;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OcrWritingDirection {
     /// Left-to-right
-    LTR,
+    Ltr,
     /// Right-to-left
-    RTL,
+    Rtl,
 }
 
 /// Object holding coordinates and size data of OCR object.
@@ -120,7 +120,7 @@ impl OcrPage {
                     vbaseline: OcrVBaseline::new(x, y + h, x + w, y + h),
                     line_vbaseline: OcrVBaseline::new(x, y + h, x + w, y + h),
                     font_size: h.max(1),
-                    writing_direction: OcrWritingDirection::LTR,
+                    writing_direction: OcrWritingDirection::Ltr,
                     last_in_line: true,
                 })
                 .collect(),
@@ -169,7 +169,7 @@ mod tests {
                 vbaseline: OcrVBaseline::new(1, 6, 4, 6),
                 line_vbaseline: OcrVBaseline::new(1, 6, 4, 6),
                 font_size: 4,
-                writing_direction: OcrWritingDirection::LTR,
+                writing_direction: OcrWritingDirection::Ltr,
                 last_in_line: true,
             }])
         }

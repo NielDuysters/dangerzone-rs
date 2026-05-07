@@ -25,7 +25,7 @@ pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator
     let mut block_id: usize = 0;
     let mut line_id: usize = 0;
     let mut curr_line_baseline = OcrVBaseline::new(0, 0, 0, 0);
-    let mut curr_writing_direction = OcrWritingDirection::LTR;
+    let mut curr_writing_direction = OcrWritingDirection::Ltr;
 
     // Reset iterator to first word on page
     unsafe { bindings::TessPageIteratorBegin(raw) };
@@ -237,8 +237,8 @@ fn writing_direction(raw: *mut c_void) -> Option<OcrWritingDirection> {
     };
 
     Some(match writing_direction {
-        1 => OcrWritingDirection::RTL,
-        _ => OcrWritingDirection::LTR,
+        1 => OcrWritingDirection::Rtl,
+        _ => OcrWritingDirection::Ltr,
     })
 }
 
