@@ -3,6 +3,7 @@
 use crate::PageData;
 
 pub(crate) mod kreuzberg_tesseract;
+pub(crate) mod pdf_renderer;
 pub(crate) use kreuzberg_tesseract::KreuzbergTesseractOcr;
 
 /// DPI used by container.
