@@ -282,6 +282,19 @@ impl KreuzbergTesseractOcr {
 
             // Set font size.
             let font_size = word_font_size(raw).unwrap_or(0);
+
+            // Set flag determining if word is last in line.
+            // This flag avoids setting trailing spaces which would be
+            // required when there would be a next word. Since it's
+            // the last word no trailing space is required.
+            let last_in_line = unsafe {
+                TessPageIteratorIsAtFinalElement(
+                    raw,
+                    TessPageIteratorLevel::RIL_TEXTLINE as c_int,
+                    TessPageIteratorLevel::RIL_WORD as c_int,
+                )
+            } != 0;
+
         }
 
         unimplemented!()
