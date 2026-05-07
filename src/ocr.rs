@@ -279,6 +279,9 @@ impl KreuzbergTesseractOcr {
             if let Some(direction) = orientation(raw) {
                 curr_writing_direction = direction;
             } 
+
+            // Set font size.
+            let font_size = word_font_size(raw).unwrap_or(0);
         }
 
         unimplemented!()
@@ -453,6 +456,32 @@ fn orientation(raw: *mut c_void) -> Option<OcrWritingDirection> {
         1 => OcrWritingDirection::RTL,
         _ => OcrWritingDirection::LTR,
     })
+}
+
+/// Get pointsize from tesseract.
+fn word_font_size(raw: *mut c_void) -> Option<i32> {
+    let mut _is_bold = 0;
+    let mut _is_italic = 0;
+    let mut _is_underlined = 0;
+    let mut _is_monospace = 0;
+    let mut _is_serif = 0;
+    let mut _is_smallcaps = 0;
+    let mut pointsize = 0;
+    let mut _font_id = 0;
+    let ok = unsafe {
+        TessResultIteratorWordFontAttributes(
+            raw,
+            &mut _is_bold,
+            &mut _is_italic,
+            &mut _is_underlined,
+            &mut _is_monospace,
+            &mut _is_serif,
+            &mut _is_smallcaps,
+            &mut pointsize,
+            &mut _font_id,
+        )
+    };
+    (ok != 0 && pointsize > 0).then_some(pointsize)
 }
 
 // Raw Tesseract C API calls that are not currently surfaced by
