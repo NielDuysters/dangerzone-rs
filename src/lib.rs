@@ -435,6 +435,148 @@ end\n";
     Ok(())
 }
 
+struct OcrTextLine<'a> {
+    words: Vec<&'a ocr::OcrWord>,
+}
+
+fn ocr_text_lines(words: &[ocr::OcrWord]) -> Vec<OcrTextLine<'_>> {
+    let mut lines = Vec::new();
+    let mut current: Option<OcrTextLine<'_>> = None;
+
+    for word in words
+        .iter()
+        .filter(|word| word.vbox.w > 0 && word.vbox.h > 0)
+    {
+        match &mut current {
+            Some(line)
+                if line.words.last().is_some_and(|last| {
+                    last.block_id == word.block_id && last.line_id == word.line_id
+                }) =>
+            {
+                line.words.push(word);
+            }
+            Some(line) => {
+                sort_ocr_line_words(&mut line.words);
+                lines.push(current.take().expect("line exists"));
+                current = Some(OcrTextLine { words: vec![word] });
+            }
+            None => {
+                current = Some(OcrTextLine { words: vec![word] });
+            }
+        }
+    }
+
+    if let Some(mut line) = current {
+        sort_ocr_line_words(&mut line.words);
+        lines.push(line);
+    }
+
+    lines
+}
+
+fn sort_ocr_line_words(words: &mut [&ocr::OcrWord]) {
+    if words
+        .first()
+        .is_some_and(|word| word.writing_direction == ocr::OcrWritingDirection::RTL)
+    {
+        words.sort_by_key(|word| std::cmp::Reverse(word.vbox.x));
+    } else {
+        words.sort_by_key(|word| word.vbox.x);
+    }
+}
+
+fn dist2(x1: i32, y1: i32, x2: i32, y2: i32) -> f32 {
+    let dx = (x2 - x1) as f32;
+    let dy = (y2 - y1) as f32;
+    dx * dx + dy * dy
+}
+
+fn clip_baseline(baseline: ocr::OcrVBaseline) -> ocr::OcrVBaseline {
+    let mut y1 = baseline.y1;
+    let mut y2 = baseline.y2;
+    let rise = (y2 - y1).abs() as f32 * 72.0;
+    let run = (baseline.x2 - baseline.x1).abs() as f32 * 72.0;
+
+    if rise < 2.0 * DPI && 2.0 * DPI < run {
+        let y = (y1 + y2) / 2;
+        y1 = y;
+        y2 = y;
+    }
+
+    ocr::OcrVBaseline::new(baseline.x1, y1, baseline.x2, y2)
+}
+
+fn word_baseline_position(
+    word: &ocr::OcrWord,
+    line_baseline: ocr::OcrVBaseline,
+    page_height_pts: f32,
+) -> (f32, f32, f32) {
+    let mut word_baseline = word.vbaseline;
+    if word.writing_direction == ocr::OcrWritingDirection::RTL {
+        word_baseline = ocr::OcrVBaseline::new(
+            word_baseline.x2,
+            word_baseline.y2,
+            word_baseline.x1,
+            word_baseline.y1,
+        );
+    }
+
+    let line_length_squared = dist2(
+        line_baseline.x1,
+        line_baseline.y1,
+        line_baseline.x2,
+        line_baseline.y2,
+    );
+    let (x, y) = if line_length_squared == 0.0 {
+        (line_baseline.x1 as f32, line_baseline.y1 as f32)
+    } else {
+        let t = ((word_baseline.x1 - line_baseline.x2) as f32
+            * (line_baseline.x2 - line_baseline.x1) as f32
+            + (word_baseline.y1 - line_baseline.y2) as f32
+                * (line_baseline.y2 - line_baseline.y1) as f32)
+            / line_length_squared;
+        (
+            line_baseline.x2 as f32 + t * (line_baseline.x2 - line_baseline.x1) as f32,
+            line_baseline.y2 as f32 + t * (line_baseline.y2 - line_baseline.y1) as f32,
+        )
+    };
+
+    let word_length = dist2(
+        word_baseline.x1,
+        word_baseline.y1,
+        word_baseline.x2,
+        word_baseline.y2,
+    )
+    .sqrt()
+        * 72.0
+        / DPI;
+
+    (
+        x * 72.0 / DPI,
+        page_height_pts - (y * 72.0 / DPI),
+        word_length,
+    )
+}
+
+fn affine_matrix(
+    direction: ocr::OcrWritingDirection,
+    line_baseline: ocr::OcrVBaseline,
+) -> (f32, f32, f32, f32) {
+    let theta = ((line_baseline.y1 - line_baseline.y2) as f32)
+        .atan2((line_baseline.x2 - line_baseline.x1) as f32);
+    let mut a = theta.cos();
+    let mut b = theta.sin();
+    let c = -theta.sin();
+    let d = theta.cos();
+
+    if direction == ocr::OcrWritingDirection::RTL {
+        a = -a;
+        b = -b;
+    }
+
+    (a, b, c, d)
+}
+
 /// Write a minimal PDF file with embedded RGB pixel data
 fn write_pdf<W: Write>(
     writer: &mut W,
@@ -562,21 +704,75 @@ fn write_pdf<W: Write>(
             format!("q\n{width_pts:.2} 0 0 {height_pts:.2} 0 0 cm\n/Im{page_idx} Do\nQ\n");
 
         if let Some(ocr_page) = ocr_pages.and_then(|pages| pages.get(page_idx)) {
-            // OCR gives word boxes in page pixels, measured from the top-left.
-            // PDF text positions use points, measured from the bottom-left, so
-            // each word position must be scaled and flipped vertically.
-            let scale = 72.0 / DPI;
+            const GLYPHLESS_CHAR_WIDTH: f32 = 2.0;
 
-            for word in ocr_page.words() {
-                let x_pts = word.vbox.x as f32 * scale;
-                let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
-                let font_size = (word.vbox.h as f32 * scale).max(1.0);
-                let text_hex = to_pdf_utf16be_hex(&word.text);
+            for line in ocr_text_lines(ocr_page.words()) {
+                let words = line
+                    .words
+                    .iter()
+                    .filter(|word| !word.text.trim().is_empty())
+                    .collect::<Vec<_>>();
 
-                // Rendering mode 3 adds invisible text to the page.
-                content.push_str(&format!(
-                    "BT\n3 Tr\n/Focr {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n<{text_hex}> Tj\nET\n"
-                ));
+                if words.is_empty() {
+                    continue;
+                }
+
+                content.push_str("BT\n3 Tr\n");
+
+                let mut old_x = 0.0;
+                let mut old_y = 0.0;
+                let mut old_direction = None;
+                let mut first_word = true;
+
+                for (word_idx, word) in words.iter().enumerate() {
+                    let text = word.text.trim();
+                    let char_count = text.chars().count();
+                    if char_count == 0 {
+                        continue;
+                    }
+
+                    let line_baseline = clip_baseline(word.line_vbaseline);
+                    let (x_pts, y_pts, word_length_pts) =
+                        word_baseline_position(word, line_baseline, height_pts);
+                    let font_size = if word.font_size > 0 {
+                        word.font_size as f32
+                    } else {
+                        (word.vbox.h as f32 * 72.0 / DPI * 0.75).max(1.0)
+                    };
+                    let horizontal_scale =
+                        (GLYPHLESS_CHAR_WIDTH * 100.0 * word_length_pts.max(1.0)
+                            / (font_size * char_count as f32))
+                            .clamp(5.0, 300.0);
+                    let pdf_word = if !word.last_in_line && word_idx + 1 < words.len() {
+                        format!("{text} ")
+                    } else {
+                        text.to_string()
+                    };
+                    let text_hex = to_pdf_utf16be_hex(&pdf_word);
+                    let (a, b, c, d) = affine_matrix(word.writing_direction, line_baseline);
+
+                    if first_word || old_direction != Some(word.writing_direction) {
+                        content.push_str(&format!(
+                            "{a:.3} {b:.3} {c:.3} {d:.3} {x_pts:.2} {y_pts:.2} Tm\n/Focr {font_size:.2} Tf\n"
+                        ));
+                        first_word = false;
+                    } else {
+                        let dx = x_pts - old_x;
+                        let dy = y_pts - old_y;
+                        let text_dx = dx * a + dy * b;
+                        let text_dy = dx * c + dy * d;
+                        content.push_str(&format!(
+                            "{text_dx:.2} {text_dy:.2} Td\n/Focr {font_size:.2} Tf\n"
+                        ));
+                    }
+
+                    content.push_str(&format!("{horizontal_scale:.2} Tz\n[ <{text_hex}> ] TJ\n"));
+                    old_x = x_pts;
+                    old_y = y_pts;
+                    old_direction = Some(word.writing_direction);
+                }
+
+                content.push_str("ET\n");
             }
         }
 
@@ -918,8 +1114,12 @@ mod tests {
             "PDF should use invisible text rendering mode"
         );
         assert!(
-            pdf_data.contains("<00680065006C006C006F002000280070006400660029> Tj"),
-            "PDF should contain UTF-16BE hex OCR text"
+            pdf_data.contains("Tz"),
+            "PDF should horizontally scale OCR text"
+        );
+        assert!(
+            pdf_data.contains("[ <00680065006C006C006F002000280070006400660029> ] TJ"),
+            "PDF should contain UTF-16BE hex OCR text in a TJ array"
         );
     }
 
