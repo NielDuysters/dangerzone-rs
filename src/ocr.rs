@@ -425,6 +425,28 @@ fn utf8_text(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<String> {
     text
 }
 
+/// Get orientation metadata from tesseract
+fn orientation(raw: *mut c_void) -> OcrWritingDirection {
+    let mut orientation = 0;
+    let mut _writing_direction = 0;
+    let mut _textline_order = 0;
+    let mut _deskew_angle = 0.0;
+    unsafe {
+        TessPageIteratorOrientation(
+            raw,
+            &mut orientation,
+            &mut _writing_direction,
+            &mut _textline_order,
+            &mut _deskew_angle,
+        )
+    };
+    
+    match orientation {
+        1 => OcrWritingDirection::RTL,
+        _ => OcrWritingDirection::LTR,
+    }
+}
+
 // Raw Tesseract C API calls that are not currently surfaced by
 // `kreuzberg-tesseract`'s safe Rust API.
 unsafe extern "C-unwind" {
