@@ -228,6 +228,33 @@ impl KreuzbergTesseractOcr {
                 curr_line_baseline = baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE)
                 .unwrap_or_else(|| fallback_baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE));
             }
+
+            // Extract text with word-level granularity.
+            let Some(text) = utf8_text(raw, TessPageIteratorLevel::RIL_WORD) else {
+                // Manually move iterator to next word
+                if unsafe {
+                    TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
+                } == 0 {
+                    // No next word found on page. Break loop.
+                    break;
+                }
+                // No text found for current word. But continue scanning next words.
+                continue;
+            };
+            
+            // Trim text, and if it's empty try continuing to
+            // next word of end loop if no next is found.
+            let text = text.trim().to_string();
+            if text.is_empty() {
+                if unsafe {
+                    TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
+                } == 0 {
+                    break;
+                }
+
+                continue;
+            }
+
         }
 
         unimplemented!()
