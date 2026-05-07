@@ -463,10 +463,10 @@ fn write_pdf<W: Write>(
             let scale = 72.0 / DPI;
 
             for word in ocr_page.words() {
-                let x_pts = word.x() as f32 * scale;
-                let y_pts = height_pts - ((word.y() + word.h()) as f32 * scale);
-                let font_size = (word.h() as f32 * scale).max(1.0);
-                let text = escape_pdf_text(word.text());
+                let x_pts = word.vbox.x as f32 * scale;
+                let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
+                let font_size = (word.vbox.h as f32 * scale).max(1.0);
+                let text = escape_pdf_text(&word.text);
 
                 // Rendering mode 3 adds invisible text to the page.
                 content.push_str(&format!(

@@ -386,10 +386,19 @@ impl OcrBackend for KreuzbergTesseractOcr {
                     } else {
                         Some(OcrWord {
                             text,
-                            x: word.left,
-                            y: word.top,
-                            w: word.right - word.left,
-                            h: word.bottom - word.top,
+                            vbox: OcrVBox {
+                                x: word.left,
+                                y: word.top,
+                                w: word.right - word.left,
+                                h: word.bottom - word.top,
+                            },
+                            block_id: 0,
+                            line_id: 0,
+                            vbaseline: OcrVBaseline::new(0, 0, 0, 0),
+                            line_vbaseline: OcrVBaseline::new(0, 0, 0, 0),
+                            font_size: 0,
+                            writing_direction: OcrWritingDirection::LTR,
+                            last_in_line: true,
                         })
                     }
                 })
