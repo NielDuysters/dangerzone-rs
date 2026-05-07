@@ -111,7 +111,7 @@ pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator
         // not a property specific to one word alone, but all words
         // on the same line need the same orientation. We remember
         // the last orientation Tesseract reported.
-        if let Some(direction) = orientation(raw) {
+        if let Some(direction) = writing_direction(raw) {
             curr_writing_direction = direction;
         }
 
@@ -220,23 +220,23 @@ fn utf8_text(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<String> {
     text
 }
 
-/// Get orientation metadata from tesseract.
-fn orientation(raw: *mut c_void) -> Option<OcrWritingDirection> {
-    let mut orientation = 0;
-    let mut _writing_direction = 0;
+/// Get writing direction metadata from Tesseract.
+fn writing_direction(raw: *mut c_void) -> Option<OcrWritingDirection> {
+    let mut _orientation = 0;
+    let mut writing_direction = 0;
     let mut _textline_order = 0;
     let mut _deskew_angle = 0.0;
     unsafe {
         bindings::TessPageIteratorOrientation(
             raw,
-            &mut orientation,
-            &mut _writing_direction,
+            &mut _orientation,
+            &mut writing_direction,
             &mut _textline_order,
             &mut _deskew_angle,
         )
     };
 
-    Some(match orientation {
+    Some(match writing_direction {
         1 => OcrWritingDirection::RTL,
         _ => OcrWritingDirection::LTR,
     })
