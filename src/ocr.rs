@@ -295,9 +295,29 @@ impl KreuzbergTesseractOcr {
                 )
             } != 0;
 
+            // Put extracted properties in `OcrWord` object and
+            // push to result list.
+            ocr_words.push(OcrWord {
+                text,
+                vbox,
+                block_id,
+                line_id,
+                vbaseline: word_baseline,
+                line_vbaseline: curr_line_baseline,
+                font_size,
+                writing_direction: curr_writing_direction,
+                last_in_line,
+            });
+
+            // Exit looping over words if no new word is found on page.
+            if unsafe {
+                TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
+            } == 0 {
+                break;
+            }
         }
 
-        unimplemented!()
+        ocr_words
     }
 }
 
