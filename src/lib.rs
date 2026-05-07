@@ -315,23 +315,124 @@ pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool
     Ok(())
 }
 
-/// Escape text for use inside a PDF literal string
-fn escape_pdf_text(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-
-    for ch in text.chars() {
-        match ch {
-            '\\' => escaped.push_str("\\\\"),
-            '(' => escaped.push_str("\\("),
-            ')' => escaped.push_str("\\)"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            _ => escaped.push(ch),
-        }
+fn to_pdf_utf16be_hex(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 4);
+    for unit in text.encode_utf16() {
+        out.push_str(&format!("{unit:04X}"));
     }
+    out
+}
 
-    escaped
+fn append_glyphless_ocr_font_objects(
+    pdf_data: &mut Vec<u8>,
+    object_offsets: &mut Vec<usize>,
+) -> Result<()> {
+    object_offsets.push(pdf_data.len());
+    pdf_data.extend_from_slice(b"3 0 obj\n");
+    pdf_data.extend_from_slice(b"<<\n");
+    pdf_data.extend_from_slice(b" /BaseFont /GlyphLessFont\n");
+    pdf_data.extend_from_slice(b" /DescendantFonts [ 4 0 R ]\n");
+    pdf_data.extend_from_slice(b" /Encoding /Identity-H\n");
+    pdf_data.extend_from_slice(b" /Subtype /Type0\n");
+    pdf_data.extend_from_slice(b" /ToUnicode 6 0 R\n");
+    pdf_data.extend_from_slice(b" /Type /Font\n");
+    pdf_data.extend_from_slice(b">>\n");
+    pdf_data.extend_from_slice(b"endobj\n");
+
+    object_offsets.push(pdf_data.len());
+    pdf_data.extend_from_slice(b"4 0 obj\n");
+    pdf_data.extend_from_slice(b"<<\n");
+    pdf_data.extend_from_slice(b" /BaseFont /GlyphLessFont\n");
+    pdf_data.extend_from_slice(b" /CIDToGIDMap 5 0 R\n");
+    pdf_data.extend_from_slice(
+        b" /CIDSystemInfo << /Ordering (Identity) /Registry (Adobe) /Supplement 0 >>\n",
+    );
+    pdf_data.extend_from_slice(b" /FontDescriptor 7 0 R\n");
+    pdf_data.extend_from_slice(b" /Subtype /CIDFontType2\n");
+    pdf_data.extend_from_slice(b" /Type /Font\n");
+    pdf_data.extend_from_slice(b" /DW 500\n");
+    pdf_data.extend_from_slice(b">>\n");
+    pdf_data.extend_from_slice(b"endobj\n");
+
+    let mut cid_to_gid_map = vec![0u8; 2 * (1 << 16)];
+    for i in 0..(1 << 16) {
+        cid_to_gid_map[i * 2 + 1] = 1;
+    }
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder
+        .write_all(&cid_to_gid_map)
+        .context("Failed to compress CIDToGIDMap")?;
+    let compressed_map = encoder
+        .finish()
+        .context("Failed to finish CIDToGIDMap compression")?;
+
+    object_offsets.push(pdf_data.len());
+    pdf_data.extend_from_slice(b"5 0 obj\n");
+    pdf_data.extend_from_slice(b"<<\n");
+    pdf_data.extend_from_slice(format!(" /Length {}\n", compressed_map.len()).as_bytes());
+    pdf_data.extend_from_slice(b" /Filter /FlateDecode\n");
+    pdf_data.extend_from_slice(b">>\n");
+    pdf_data.extend_from_slice(b"stream\n");
+    pdf_data.extend_from_slice(&compressed_map);
+    pdf_data.extend_from_slice(b"\nendstream\n");
+    pdf_data.extend_from_slice(b"endobj\n");
+
+    let to_unicode = b"/CIDInit /ProcSet findresource begin\n\
+12 dict begin\n\
+begincmap\n\
+/CIDSystemInfo\n\
+<< /Registry (Adobe)\n\
+/Ordering (UCS)\n\
+/Supplement 0\n\
+>> def\n\
+/CMapName /Adobe-Identity-UCS def\n\
+/CMapType 2 def\n\
+1 begincodespacerange\n\
+<0000> <FFFF>\n\
+endcodespacerange\n\
+1 beginbfrange\n\
+<0000> <FFFF> <0000>\n\
+endbfrange\n\
+endcmap\n\
+CMapName currentdict /CMap defineresource pop\n\
+end\n\
+end\n";
+    object_offsets.push(pdf_data.len());
+    pdf_data.extend_from_slice(b"6 0 obj\n");
+    pdf_data.extend_from_slice(format!("<< /Length {} >>\n", to_unicode.len()).as_bytes());
+    pdf_data.extend_from_slice(b"stream\n");
+    pdf_data.extend_from_slice(to_unicode);
+    pdf_data.extend_from_slice(b"endstream\n");
+    pdf_data.extend_from_slice(b"endobj\n");
+
+    object_offsets.push(pdf_data.len());
+    pdf_data.extend_from_slice(b"7 0 obj\n");
+    pdf_data.extend_from_slice(b"<<\n");
+    pdf_data.extend_from_slice(b" /Ascent 1000\n");
+    pdf_data.extend_from_slice(b" /CapHeight 1000\n");
+    pdf_data.extend_from_slice(b" /Descent -1\n");
+    pdf_data.extend_from_slice(b" /Flags 5\n");
+    pdf_data.extend_from_slice(b" /FontBBox [ 0 0 500 1000 ]\n");
+    pdf_data.extend_from_slice(b" /FontFile2 8 0 R\n");
+    pdf_data.extend_from_slice(b" /FontName /GlyphLessFont\n");
+    pdf_data.extend_from_slice(b" /ItalicAngle 0\n");
+    pdf_data.extend_from_slice(b" /StemV 80\n");
+    pdf_data.extend_from_slice(b" /Type /FontDescriptor\n");
+    pdf_data.extend_from_slice(b">>\n");
+    pdf_data.extend_from_slice(b"endobj\n");
+
+    object_offsets.push(pdf_data.len());
+    pdf_data.extend_from_slice(b"8 0 obj\n");
+    pdf_data.extend_from_slice(b"<<\n");
+    pdf_data.extend_from_slice(format!(" /Length {}\n", GLYPHLESS_PDF_TTF.len()).as_bytes());
+    pdf_data.extend_from_slice(format!(" /Length1 {}\n", GLYPHLESS_PDF_TTF.len()).as_bytes());
+    pdf_data.extend_from_slice(b">>\n");
+    pdf_data.extend_from_slice(b"stream\n");
+    pdf_data.extend_from_slice(GLYPHLESS_PDF_TTF);
+    pdf_data.extend_from_slice(b"\nendstream\n");
+    pdf_data.extend_from_slice(b"endobj\n");
+
+    Ok(())
 }
 
 /// Write a minimal PDF file with embedded RGB pixel data
@@ -352,6 +453,8 @@ fn write_pdf<W: Write>(
 
     let mut pdf_data = Vec::new();
     let mut object_offsets = Vec::new();
+    let has_ocr = ocr_pages.is_some();
+    let first_page_obj_num = if has_ocr { 9 } else { 3 };
 
     // PDF Header
     pdf_data.extend_from_slice(b"%PDF-1.4\n");
@@ -375,7 +478,7 @@ fn write_pdf<W: Write>(
     // Build kids array
     let mut kids = String::from("/Kids [");
     for i in 0..pages.len() {
-        kids.push_str(&format!("{} 0 R ", 3 + i * 2));
+        kids.push_str(&format!("{} 0 R ", first_page_obj_num + i * 2));
     }
     kids.push_str("]\n");
     pdf_data.extend_from_slice(kids.as_bytes());
@@ -383,6 +486,9 @@ fn write_pdf<W: Write>(
     pdf_data.extend_from_slice(format!("/Count {}\n", pages.len()).as_bytes());
     pdf_data.extend_from_slice(b">>\n");
     pdf_data.extend_from_slice(b"endobj\n");
+    if has_ocr {
+        append_glyphless_ocr_font_objects(&mut pdf_data, &mut object_offsets)?;
+    }
 
     // For each page, create a Page object and an Image XObject
     for (page_idx, page) in pages.iter().enumerate() {
@@ -393,7 +499,7 @@ fn write_pdf<W: Write>(
         let height_pts = (page.height as f32) / DPI * 72.0;
 
         // Page object
-        let page_obj_num = 3 + page_idx * 2;
+        let page_obj_num = first_page_obj_num + page_idx * 2;
         let image_obj_num = page_obj_num + 1;
 
         object_offsets.push(pdf_data.len());
@@ -408,17 +514,15 @@ fn write_pdf<W: Write>(
         pdf_data.extend_from_slice(
             format!("  /XObject << /Im{page_idx} {image_obj_num} 0 R >>\n").as_bytes(),
         );
-        if ocr_pages.is_some() {
-            // Font for hidden OCR text
-            pdf_data.extend_from_slice(
-                b"  /Font << /Focr << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>\n",
-            );
+        if has_ocr {
+            pdf_data.extend_from_slice(b"  /Font << /Focr 3 0 R >>\n");
         }
         pdf_data.extend_from_slice(b">>\n");
 
         // Reference to content stream object
+        let first_content_obj_num = first_page_obj_num + pages.len() * 2;
         pdf_data.extend_from_slice(
-            format!("/Contents {} 0 R\n", 3 + pages.len() * 2 + page_idx).as_bytes(),
+            format!("/Contents {} 0 R\n", first_content_obj_num + page_idx).as_bytes(),
         );
         pdf_data.extend_from_slice(b">>\n");
         pdf_data.extend_from_slice(b"endobj\n");
@@ -467,16 +571,17 @@ fn write_pdf<W: Write>(
                 let x_pts = word.vbox.x as f32 * scale;
                 let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
                 let font_size = (word.vbox.h as f32 * scale).max(1.0);
-                let text = escape_pdf_text(&word.text);
+                let text_hex = to_pdf_utf16be_hex(&word.text);
 
                 // Rendering mode 3 adds invisible text to the page.
                 content.push_str(&format!(
-                    "BT\n3 Tr\n/Focr {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n({text}) Tj\nET\n"
+                    "BT\n3 Tr\n/Focr {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n<{text_hex}> Tj\nET\n"
                 ));
             }
         }
 
-        let content_obj_num = 3 + pages.len() * 2 + page_idx;
+        let first_content_obj_num = first_page_obj_num + pages.len() * 2;
+        let content_obj_num = first_content_obj_num + page_idx;
         object_offsets.push(pdf_data.len());
         pdf_data.extend_from_slice(format!("{content_obj_num} 0 obj\n").as_bytes());
         pdf_data.extend_from_slice(b"<<\n");
@@ -797,12 +902,24 @@ mod tests {
             "PDF should include OCR font resource"
         );
         assert!(
+            pdf_data.contains("/GlyphLessFont"),
+            "PDF should include the glyphless OCR font"
+        );
+        assert!(
+            pdf_data.contains("/FontFile2 8 0 R"),
+            "PDF should embed the glyphless TrueType font"
+        );
+        assert!(
+            pdf_data.contains("/Encoding /Identity-H"),
+            "PDF should use Identity-H encoding for OCR text"
+        );
+        assert!(
             pdf_data.contains("3 Tr"),
             "PDF should use invisible text rendering mode"
         );
         assert!(
-            pdf_data.contains("(hello \\(pdf\\)) Tj"),
-            "PDF should contain escaped OCR text"
+            pdf_data.contains("<00680065006C006C006F002000280070006400660029> Tj"),
+            "PDF should contain UTF-16BE hex OCR text"
         );
     }
 

@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 
 use crate::PageData;
-use kreuzberg_tesseract::{Pix, TesseractAPI, TessPageIteratorLevel};
-use std::os::raw::{c_char, c_int, c_void};
+use kreuzberg_tesseract::{Pix, TessPageIteratorLevel, TesseractAPI};
 use std::ffi::CStr;
+use std::os::raw::{c_char, c_int, c_void};
 
 /// DPI used by container
 pub const DEFAULT_DPI: i32 = 150;
@@ -53,9 +53,7 @@ pub(crate) struct OcrVBaseline {
 impl OcrVBaseline {
     /// Helper method to construct
     pub fn new(x1: i32, y1: i32, x2: i32, y2: i32) -> Self {
-        Self {
-            x1, y1, x2, y2
-        }
+        Self { x1, y1, x2, y2 }
     }
 }
 
@@ -117,10 +115,14 @@ impl OcrPage {
                 .into_iter()
                 .map(|(text, x, y, w, h)| OcrWord {
                     text: text.to_string(),
-                    x,
-                    y,
-                    w,
-                    h,
+                    vbox: OcrVBox { x, y, w, h },
+                    block_id: 0,
+                    line_id: 0,
+                    vbaseline: OcrVBaseline::new(x, y + h, x + w, y + h),
+                    line_vbaseline: OcrVBaseline::new(x, y + h, x + w, y + h),
+                    font_size: h.max(1),
+                    writing_direction: OcrWritingDirection::LTR,
+                    last_in_line: true,
                 })
                 .collect(),
         )
@@ -182,13 +184,14 @@ impl KreuzbergTesseractOcr {
             path.join("tessdata")
         }
     }
-    
+
     /// Extract PDF words and their properties.
     ///
     /// Required to construct OcrWord's. We use Tesseract's low-level iterator since it provides
     /// more details.
-    pub(crate) fn extract_pdf_words(iterator: &kreuzberg_tesseract::ResultIterator) -> Vec<OcrWord> {
-
+    pub(crate) fn extract_pdf_words(
+        iterator: &kreuzberg_tesseract::ResultIterator,
+    ) -> Vec<OcrWord> {
         // Get raw handle
         let Ok(handle) = iterator.handle.lock() else {
             return Vec::new();
@@ -196,12 +199,12 @@ impl KreuzbergTesseractOcr {
         let raw = *handle;
 
         // Vector containing results we will return
-        let mut ocr_words : Vec<OcrWord> = Vec::new();
+        let mut ocr_words: Vec<OcrWord> = Vec::new();
 
         // Helper properties used when looping over iterator
         let mut block_id: usize = 0;
         let mut line_id: usize = 0;
-        let mut curr_line_baseline = OcrVBaseline::new(0,0,0,0);
+        let mut curr_line_baseline = OcrVBaseline::new(0, 0, 0, 0);
         let mut curr_writing_direction = OcrWritingDirection::LTR;
 
         // Reset iterator to first word on page
@@ -215,7 +218,8 @@ impl KreuzbergTesseractOcr {
             // text that should remain separated.
             if unsafe {
                 TessPageIteratorIsAtBeginningOf(raw, TessPageIteratorLevel::RIL_BLOCK as c_int)
-            } != 0 {
+            } != 0
+            {
                 block_id += 1;
             }
 
@@ -223,32 +227,33 @@ impl KreuzbergTesseractOcr {
             // A line-level baseline is used as reference for rotated/skewed text.
             if unsafe {
                 TessPageIteratorIsAtBeginningOf(raw, TessPageIteratorLevel::RIL_TEXTLINE as c_int)
-            } != 0 {
+            } != 0
+            {
                 line_id += 1;
                 curr_line_baseline = baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE)
-                .unwrap_or_else(|| fallback_baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE));
+                    .unwrap_or_else(|| fallback_baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE));
             }
 
             // Extract text with word-level granularity.
             let Some(text) = utf8_text(raw, TessPageIteratorLevel::RIL_WORD) else {
                 // Manually move iterator to next word
-                if unsafe {
-                    TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
-                } == 0 {
+                if unsafe { TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int) }
+                    == 0
+                {
                     // No next word found on page. Break loop.
                     break;
                 }
                 // No text found for current word. But continue scanning next words.
                 continue;
             };
-            
+
             // Trim text, and if it's empty try continuing to
             // next word of end loop if no next is found.
             let text = text.trim().to_string();
             if text.is_empty() {
-                if unsafe {
-                    TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
-                } == 0 {
+                if unsafe { TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int) }
+                    == 0
+                {
                     break;
                 }
 
@@ -258,19 +263,21 @@ impl KreuzbergTesseractOcr {
             // Check if word has a bounding_box. Ignore if it doesn't to avoid poisoning whole OCR
             // result.
             let Some(vbox) = bounding_box(raw, TessPageIteratorLevel::RIL_WORD) else {
-                if unsafe {
-                    TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
-                } == 0 {
+                if unsafe { TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int) }
+                    == 0
+                {
                     break;
                 }
-                
+
                 continue;
             };
 
             // Set word_baseline. Fall back to horizontal line at
             // bottom of word-box is missing.
-            let word_baseline = baseline(raw, TessPageIteratorLevel::RIL_WORD)
-                .unwrap_or_else(|| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h));
+            let word_baseline =
+                baseline(raw, TessPageIteratorLevel::RIL_WORD).unwrap_or_else(|| {
+                    OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h)
+                });
 
             // Set direction. We cache this since orientation is
             // not a property specific to one word alone, but all words
@@ -278,7 +285,7 @@ impl KreuzbergTesseractOcr {
             // the last orientation Tesseract reported.
             if let Some(direction) = orientation(raw) {
                 curr_writing_direction = direction;
-            } 
+            }
 
             // Set font size.
             let font_size = word_font_size(raw).unwrap_or(0);
@@ -310,9 +317,8 @@ impl KreuzbergTesseractOcr {
             });
 
             // Exit looping over words if no new word is found on page.
-            if unsafe {
-                TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int)
-            } == 0 {
+            if unsafe { TessResultIteratorNext(raw, TessPageIteratorLevel::RIL_WORD as c_int) } == 0
+            {
                 break;
             }
         }
@@ -373,9 +379,7 @@ impl OcrBackend for KreuzbergTesseractOcr {
 
         OcrPage::new(KreuzbergTesseractOcr::extract_pdf_words(&iterator))
     }
-
 }
-
 
 // TODO: We will revisit our project structure to put
 // the following code in a separate module.
@@ -424,7 +428,7 @@ fn baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<OcrVBaseli
 /// bounding box.
 fn fallback_baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> OcrVBaseline {
     bounding_box(raw, level)
-        .map(| vbox| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h))
+        .map(|vbox| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h))
         .unwrap_or_else(|| OcrVBaseline::new(0, 0, 0, 0))
 }
 
@@ -461,7 +465,7 @@ fn orientation(raw: *mut c_void) -> Option<OcrWritingDirection> {
             &mut _deskew_angle,
         )
     };
-    
+
     Some(match orientation {
         1 => OcrWritingDirection::RTL,
         _ => OcrWritingDirection::LTR,
@@ -544,17 +548,25 @@ unsafe extern "C-unwind" {
 mod tests {
     use super::*;
 
-
     struct FakeOcrBackend;
 
     impl OcrBackend for FakeOcrBackend {
         fn ocr_page(&self, _pixels: &[u8], width: u16, height: u16) -> OcrPage {
             OcrPage::new(vec![OcrWord {
                 text: format!("{width}x{height}"),
-                x: 1,
-                y: 2,
-                w: 3,
-                h: 4,
+                vbox: OcrVBox {
+                    x: 1,
+                    y: 2,
+                    w: 3,
+                    h: 4,
+                },
+                block_id: 0,
+                line_id: 0,
+                vbaseline: OcrVBaseline::new(1, 6, 4, 6),
+                line_vbaseline: OcrVBaseline::new(1, 6, 4, 6),
+                font_size: 4,
+                writing_direction: OcrWritingDirection::LTR,
+                last_in_line: true,
             }])
         }
     }
