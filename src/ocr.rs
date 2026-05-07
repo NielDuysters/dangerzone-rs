@@ -371,39 +371,7 @@ impl OcrBackend for KreuzbergTesseractOcr {
             Err(_) => return OcrPage::new(Vec::new()),
         };
 
-        let words = match iterator.extract_all_words() {
-            Ok(words) => words,
-            Err(_) => return OcrPage::new(Vec::new()),
-        };
-
-        OcrPage::new(
-            words
-                .into_iter()
-                .filter_map(|word| {
-                    let text = word.text.trim().to_string();
-                    if text.is_empty() {
-                        None
-                    } else {
-                        Some(OcrWord {
-                            text,
-                            vbox: OcrVBox {
-                                x: word.left,
-                                y: word.top,
-                                w: word.right - word.left,
-                                h: word.bottom - word.top,
-                            },
-                            block_id: 0,
-                            line_id: 0,
-                            vbaseline: OcrVBaseline::new(0, 0, 0, 0),
-                            line_vbaseline: OcrVBaseline::new(0, 0, 0, 0),
-                            font_size: 0,
-                            writing_direction: OcrWritingDirection::LTR,
-                            last_in_line: true,
-                        })
-                    }
-                })
-                .collect(),
-        )
+        OcrPage::new(KreuzbergTesseractOcr::extract_pdf_words(&iterator))
     }
 
 }
