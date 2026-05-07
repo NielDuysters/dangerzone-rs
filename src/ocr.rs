@@ -271,6 +271,14 @@ impl KreuzbergTesseractOcr {
             // bottom of word-box is missing.
             let word_baseline = baseline(raw, TessPageIteratorLevel::RIL_WORD)
                 .unwrap_or_else(|| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h));
+
+            // Set direction. We cache this since orientation is
+            // not a property specific to one word alone, but all words
+            // on the same line need the same orientation. We remember
+            // the last orientation Tesseract reported.
+            if let Some(direction) = orientation(raw) {
+                curr_writing_direction = direction;
+            } 
         }
 
         unimplemented!()
@@ -426,7 +434,7 @@ fn utf8_text(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<String> {
 }
 
 /// Get orientation metadata from tesseract
-fn orientation(raw: *mut c_void) -> OcrWritingDirection {
+fn orientation(raw: *mut c_void) -> Option<OcrWritingDirection> {
     let mut orientation = 0;
     let mut _writing_direction = 0;
     let mut _textline_order = 0;
@@ -441,10 +449,10 @@ fn orientation(raw: *mut c_void) -> OcrWritingDirection {
         )
     };
     
-    match orientation {
+    Some(match orientation {
         1 => OcrWritingDirection::RTL,
         _ => OcrWritingDirection::LTR,
-    }
+    })
 }
 
 // Raw Tesseract C API calls that are not currently surfaced by
