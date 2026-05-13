@@ -106,6 +106,71 @@ pub(crate) struct OcrTextLine<'a> {
     words: Vec<&'a OcrWord>,
 }
 
+/// Group individual OCR words into text lines reported by the OCR backend.
+fn merge_ocr_words_into_ocr_text_line(
+    // This argument is a borrowed slice of `OcrWords`. Due to this borrowed slice we need a
+    // specified lifetime for `OcrTextLine`.
+    // The alternative to avoid lifetimes would be to make words a Vec copying the words, but this
+    // would result in poor performance.
+    words: &[OcrWord]
+) -> Vec<OcrTextLine<'_>> {
+
+    // Lines we will return as result.
+    let mut lines : Vec<OcrTextLine<'_>> = Vec::new();
+    // Current line we are processing.
+    let mut curr_line : Option<OcrTextLine<'_>> = None;
+
+    // Helper method returning if current word is in
+    // the currently processed line.
+    fn word_in_curr_line(line: &OcrTextLine<'_>, word: &OcrWord) -> bool {
+        line.words.last().is_some_and(|last| {
+            last.block_id == word.block_id && last.line_id == word.line_id
+        })
+    }
+
+    // Loop over words.
+    for word in words
+        .iter()
+        // Only use non-corrupt word boxes.
+        .filter(|word| word.vbox.w > 0 && word.vbox.h > 0)
+    {
+        // Check state of current line.
+        match &mut curr_line {
+            // We are handling a line and the current word
+            // is part of `curr_line`
+            Some(line) if word_in_curr_line(line, word) => {
+                // Just push word to current line since it's part of it.
+                line.words.push(word);
+            }
+            // We are handling a line put should move to another visual line since current word is
+            // not considered a part of `curr_line`.
+            Some(line) => {
+                // Sort words in line by x-coordinate.
+                line.words.sort_by_key(|word| word.vbox.x);
+                // Push current line to lines.
+                // .take() takes ownership of curr_line and resets to None.
+                lines.push(curr_line.take().expect("curr_line should exist"));
+                // Move currently handled word to a next visual line.
+                curr_line = Some(OcrTextLine { words: vec![word] });
+
+            }
+            // First line encountered: Initiate a new line with current word as first.
+            None => {
+                curr_line = Some(OcrTextLine { words: vec![word] });
+            }
+        }
+    }
+
+    // Flush latest remaining line into lines.
+    if let Some(mut line) = curr_line {
+        // Sort words in line by x-coordinate.
+        line.words.sort_by_key(|word| word.vbox.x);
+        lines.push(line);
+    }
+
+    lines
+}
+
 /// Object for each page in a document
 ///
 /// An `OcrPage` contains it's `OcrWord`'s. Together they
