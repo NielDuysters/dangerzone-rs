@@ -94,6 +94,18 @@ pub(crate) struct OcrWord {
     pub last_in_line: bool,
 }
 
+/// Object for each line in the OCR PDF containing words
+///
+/// We use this to make the OCR placement line-aware instead
+/// of word-by-word individually. This to make RTL behavior more consistent.
+#[derive(Debug)]
+pub(crate) struct OcrTextLine<'a> {
+    /// Words in this line. We borrow these words and don't own them.
+    /// We use a lifetime param to let Rust know this line is only valid as long as the referenced
+    /// words are alive.
+    words: Vec<&'a OcrWord>,
+}
+
 /// Object for each page in a document
 ///
 /// An `OcrPage` contains it's `OcrWord`'s. Together they
