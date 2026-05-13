@@ -546,7 +546,7 @@ unsafe extern "C-unwind" {
 ///
 /// These objects are embedded once into the PDF and referenced
 /// by `/OcrFont`.
-fn embed_ocr_font(
+pub(crate) fn embed_ocr_font(
     pdf_data: &mut Vec<u8>, // Raw PDF data
     object_offsets: &mut Vec<usize>, // Byte positions of each new object. Used to write the PDF xref table.
 ) -> Result<()> {

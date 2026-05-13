@@ -352,6 +352,11 @@ fn write_pdf<W: Write>(
 
     let mut pdf_data = Vec::new();
     let mut object_offsets = Vec::new();
+    let has_ocr = ocr_pages.is_some();
+
+    // If OCR is used objects 3 - 6 are used for embedding the OCR glyphless font.
+    // For pure image based documents the first object is still located at index 3.
+    let first_object_on_first_page_index = if has_ocr { 7 } else { 3 }; 
 
     // PDF Header
     pdf_data.extend_from_slice(b"%PDF-1.4\n");
@@ -375,7 +380,8 @@ fn write_pdf<W: Write>(
     // Build kids array
     let mut kids = String::from("/Kids [");
     for i in 0..pages.len() {
-        kids.push_str(&format!("{} 0 R ", 3 + i * 2));
+        // Dynamically reference first `/Type /Page` object depending on if OCR is used.
+        kids.push_str(&format!("{} 0 R ", first_object_on_first_page_index + i * 2));
     }
     kids.push_str("]\n");
     pdf_data.extend_from_slice(kids.as_bytes());
@@ -383,6 +389,11 @@ fn write_pdf<W: Write>(
     pdf_data.extend_from_slice(format!("/Count {}\n", pages.len()).as_bytes());
     pdf_data.extend_from_slice(b">>\n");
     pdf_data.extend_from_slice(b"endobj\n");
+
+    // If OCR is used, embed our OCR font objects into the PDF.
+    if has_ocr {
+        ocr::embed_ocr_font(&mut pdf_data, &mut object_offsets)?;
+    }
 
     // For each page, create a Page object and an Image XObject
     for (page_idx, page) in pages.iter().enumerate() {
@@ -393,7 +404,7 @@ fn write_pdf<W: Write>(
         let height_pts = (page.height as f32) / DPI * 72.0;
 
         // Page object
-        let page_obj_num = 3 + page_idx * 2;
+        let page_obj_num = first_object_on_first_page_index + page_idx * 2;
         let image_obj_num = page_obj_num + 1;
 
         object_offsets.push(pdf_data.len());
@@ -408,17 +419,18 @@ fn write_pdf<W: Write>(
         pdf_data.extend_from_slice(
             format!("  /XObject << /Im{page_idx} {image_obj_num} 0 R >>\n").as_bytes(),
         );
-        if ocr_pages.is_some() {
-            // Font for hidden OCR text
-            pdf_data.extend_from_slice(
-                b"  /Font << /Focr << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>\n",
-            );
+
+        // If OCR is used reference to object 3 containing the Type0 font as used font.
+        if has_ocr {
+            pdf_data.extend_from_slice(b"  /Font << /OcrFont 3 0 R >>\n");
         }
+
         pdf_data.extend_from_slice(b">>\n");
 
         // Reference to content stream object
+        let first_content_object_index_curr_page = first_object_on_first_page_index + pages.len() * 2;
         pdf_data.extend_from_slice(
-            format!("/Contents {} 0 R\n", 3 + pages.len() * 2 + page_idx).as_bytes(),
+            format!("/Contents {} 0 R\n", first_content_object_index_curr_page + page_idx).as_bytes(),
         );
         pdf_data.extend_from_slice(b">>\n");
         pdf_data.extend_from_slice(b"endobj\n");
@@ -476,7 +488,7 @@ fn write_pdf<W: Write>(
             }
         }
 
-        let content_obj_num = 3 + pages.len() * 2 + page_idx;
+        let content_obj_num = first_object_on_first_page_index + page_idx;
         object_offsets.push(pdf_data.len());
         pdf_data.extend_from_slice(format!("{content_obj_num} 0 obj\n").as_bytes());
         pdf_data.extend_from_slice(b"<<\n");
