@@ -103,11 +103,11 @@ pub(crate) struct OcrTextLine<'a> {
     /// Words in this line. We borrow these words and don't own them.
     /// We use a lifetime param to let Rust know this line is only valid as long as the referenced
     /// words are alive.
-    words: Vec<&'a OcrWord>,
+    pub words: Vec<&'a OcrWord>,
 }
 
 /// Group individual OCR words into text lines reported by the OCR backend.
-fn merge_ocr_words_into_ocr_text_line(
+pub(crate) fn merge_ocr_words_into_ocr_text_line(
     // This argument is a borrowed slice of `OcrWords`. Due to this borrowed slice we need a
     // specified lifetime for `OcrTextLine`.
     // The alternative to avoid lifetimes would be to make words a Vec copying the words, but this

@@ -468,17 +468,32 @@ fn write_pdf<W: Write>(
             // each word position must be scaled and flipped vertically.
             let scale = 72.0 / DPI;
 
-            for word in ocr_page.words() {
-                let x_pts = word.vbox.x as f32 * scale;
-                let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
-                let font_size = (word.vbox.h as f32 * scale).max(1.0);
-                let text_hex = text_to_utf16be_hex(&word.text);
+            // Create vec of `OcrTextLine`'s and loop over lines.
+            for line in ocr::merge_ocr_words_into_ocr_text_line(ocr_page.words()) {
+                
+                // Get words in line.
+                let words = line
+                    .words
+                    .iter()
+                    .filter(|word| !word.text.trim().is_empty())
+                    .collect::<Vec<_>>();
 
-                // Rendering mode 3 adds invisible text to the page.
-                content.push_str(&format!(
+                if words.is_empty() {
+                    continue;
+                }
+                
+                for word in words {
+                    let x_pts = word.vbox.x as f32 * scale;
+                    let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
+                    let font_size = (word.vbox.h as f32 * scale).max(1.0);
+                    let text_hex = text_to_utf16be_hex(&word.text);
+
+                    // Rendering mode 3 adds invisible text to the page.
+                    content.push_str(&format!(
                     "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n({text_hex}) Tj\nET\n"
                 ));
-            }
+                }
+            } 
         }
 
         let content_obj_num = first_object_on_first_page_index + page_idx;
