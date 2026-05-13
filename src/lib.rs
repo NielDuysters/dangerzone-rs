@@ -490,7 +490,7 @@ fn write_pdf<W: Write>(
 
                     // Rendering mode 3 adds invisible text to the page.
                     content.push_str(&format!(
-                    "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n({text_hex}) Tj\nET\n"
+                    "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n<{text_hex}> Tj\nET\n"
                 ));
                 }
             } 
