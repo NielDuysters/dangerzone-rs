@@ -388,6 +388,8 @@ fn write_pdf<W: Write>(
         ocr::embed_ocr_font(&mut pdf_data, &mut object_offsets)?;
     }
 
+    let first_content_object_index_curr_page = first_object_on_first_page_index + pages.len() * 2;
+
     // For each page, create a Page object and an Image XObject
     for (page_idx, page) in pages.iter().enumerate() {
         eprintln!("Adding page {} to PDF...", page_idx + 1);
@@ -421,7 +423,6 @@ fn write_pdf<W: Write>(
         pdf_data.extend_from_slice(b">>\n");
 
         // Reference to content stream object
-        let first_content_object_index_curr_page = first_object_on_first_page_index + pages.len() * 2;
         pdf_data.extend_from_slice(
             format!("/Contents {} 0 R\n", first_content_object_index_curr_page + page_idx).as_bytes(),
         );
@@ -496,7 +497,7 @@ fn write_pdf<W: Write>(
             } 
         }
 
-        let content_obj_num = first_object_on_first_page_index + page_idx;
+        let content_obj_num = first_content_object_index_curr_page + page_idx;
         object_offsets.push(pdf_data.len());
         pdf_data.extend_from_slice(format!("{content_obj_num} 0 obj\n").as_bytes());
         pdf_data.extend_from_slice(b"<<\n");
