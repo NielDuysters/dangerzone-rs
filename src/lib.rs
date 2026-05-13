@@ -315,23 +315,16 @@ pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool
     Ok(())
 }
 
-/// Escape text for use inside a PDF literal string
-fn escape_pdf_text(text: &str) -> String {
-    let mut escaped = String::with_capacity(text.len());
-
-    for ch in text.chars() {
-        match ch {
-            '\\' => escaped.push_str("\\\\"),
-            '(' => escaped.push_str("\\("),
-            ')' => escaped.push_str("\\)"),
-            '\n' => escaped.push_str("\\n"),
-            '\r' => escaped.push_str("\\r"),
-            '\t' => escaped.push_str("\\t"),
-            _ => escaped.push(ch),
-        }
+/// Encode OCR text so our glyphless font can understand it
+///
+/// Our OCR font uses /Identity-H which expects each character to
+/// be represented as a 16-bit hex. 
+fn text_to_utf16be_hex(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 4);
+    for unit in text.encode_utf16() {
+        out.push_str(&format!("{unit:04X}"));
     }
-
-    escaped
+    out
 }
 
 /// Write a minimal PDF file with embedded RGB pixel data
@@ -479,11 +472,11 @@ fn write_pdf<W: Write>(
                 let x_pts = word.vbox.x as f32 * scale;
                 let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
                 let font_size = (word.vbox.h as f32 * scale).max(1.0);
-                let text = escape_pdf_text(&word.text);
+                let text_hex = text_to_utf16be_hex(&word.text);
 
                 // Rendering mode 3 adds invisible text to the page.
                 content.push_str(&format!(
-                    "BT\n3 Tr\n/Focr {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n({text}) Tj\nET\n"
+                    "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n({text_hex}) Tj\nET\n"
                 ));
             }
         }

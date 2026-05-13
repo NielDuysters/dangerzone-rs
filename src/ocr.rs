@@ -566,9 +566,6 @@ pub(crate) fn embed_ocr_font(
     // Declare font subtype. Type0 is the composite font containing multiple CID fonts. This way we
     // can support a wide range of Unicode characters.
     pdf_data.extend_from_slice(b" /Subtype /Type0\n");
-    // Associate to unicde mapping. Without this the OCR only knows what glyph to draw, but not
-    // what the meaning would be. Without this copy/pasting and searching wouldn't work.
-    pdf_data.extend_from_slice(b" /ToUnicode 6 0 R\n");
     // Declare this object as a Font.
     pdf_data.extend_from_slice(b" /Type /Font\n");
     // End PDF dictionary.
