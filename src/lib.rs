@@ -13,7 +13,7 @@ pub const IMAGE_NAME: &str = "ghcr.io/freedomofpress/dangerzone/v1";
 pub const INT_BYTES: usize = 2;
 pub const DPI: f32 = 150.0;
 const MAX_SANITIZED_CHUNK_BYTES: u64 = 64 * 1024;
-const GLYPHLESS_PDF_TTF: &[u8] = include_bytes!("../assets/pdf.ttf");
+pub const GLYPHLESS_PDF_TTF: &[u8] = include_bytes!("../assets/pdf.ttf");
 
 fn get_security_args() -> Vec<String> {
     vec![
