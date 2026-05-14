@@ -1,3 +1,4 @@
+// TODO: A library shouldn't use anyhow::Result. Use e.g thiserror instead.
 use anyhow::{Context, Result};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
