@@ -13,7 +13,6 @@ pub const IMAGE_NAME: &str = "ghcr.io/freedomofpress/dangerzone/v1";
 pub const INT_BYTES: usize = 2;
 pub const DPI: f32 = 150.0;
 const MAX_SANITIZED_CHUNK_BYTES: u64 = 64 * 1024;
-pub const GLYPHLESS_PDF_TTF: &[u8] = include_bytes!("../assets/pdf.ttf");
 
 fn get_security_args() -> Vec<String> {
     vec![
@@ -315,18 +314,6 @@ pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool
     Ok(())
 }
 
-/// Encode OCR text so our glyphless font can understand it
-///
-/// Our OCR font uses /Identity-H which expects each character to
-/// be represented as a 16-bit hex. 
-fn text_to_utf16be_hex(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() * 4);
-    for unit in text.encode_utf16() {
-        out.push_str(&format!("{unit:04X}"));
-    }
-    out
-}
-
 /// Write a minimal PDF file with embedded RGB pixel data
 fn write_pdf<W: Write>(
     writer: &mut W,
@@ -349,7 +336,7 @@ fn write_pdf<W: Write>(
 
     // If OCR is used objects 3 - 6 are used for embedding the OCR glyphless font.
     // For pure image based documents the first object is still located at index 3.
-    let first_object_on_first_page_index = if has_ocr { 7 } else { 3 }; 
+    let first_object_on_first_page_index = if has_ocr { 7 } else { 3 };
 
     // PDF Header
     pdf_data.extend_from_slice(b"%PDF-1.4\n");
@@ -374,7 +361,10 @@ fn write_pdf<W: Write>(
     let mut kids = String::from("/Kids [");
     for i in 0..pages.len() {
         // Dynamically reference first `/Type /Page` object depending on if OCR is used.
-        kids.push_str(&format!("{} 0 R ", first_object_on_first_page_index + i * 2));
+        kids.push_str(&format!(
+            "{} 0 R ",
+            first_object_on_first_page_index + i * 2
+        ));
     }
     kids.push_str("]\n");
     pdf_data.extend_from_slice(kids.as_bytes());
@@ -385,7 +375,7 @@ fn write_pdf<W: Write>(
 
     // If OCR is used, embed our OCR font objects into the PDF.
     if has_ocr {
-        ocr::embed_ocr_font(&mut pdf_data, &mut object_offsets)?;
+        ocr::pdf_renderer::embed_ocr_font(&mut pdf_data, &mut object_offsets)?;
     }
 
     let first_content_object_index_curr_page = first_object_on_first_page_index + pages.len() * 2;
@@ -424,7 +414,11 @@ fn write_pdf<W: Write>(
 
         // Reference to content stream object
         pdf_data.extend_from_slice(
-            format!("/Contents {} 0 R\n", first_content_object_index_curr_page + page_idx).as_bytes(),
+            format!(
+                "/Contents {} 0 R\n",
+                first_content_object_index_curr_page + page_idx
+            )
+            .as_bytes(),
         );
         pdf_data.extend_from_slice(b">>\n");
         pdf_data.extend_from_slice(b"endobj\n");
@@ -464,60 +458,7 @@ fn write_pdf<W: Write>(
             format!("q\n{width_pts:.2} 0 0 {height_pts:.2} 0 0 cm\n/Im{page_idx} Do\nQ\n");
 
         if let Some(ocr_page) = ocr_pages.and_then(|pages| pages.get(page_idx)) {
-            // OCR gives word boxes in page pixels, measured from the top-left.
-            // PDF text positions use points, measured from the bottom-left, so
-            // each word position must be scaled and flipped vertically.
-            let scale = 72.0 / DPI;
-
-            // This is a hardcoded const used for calibration to determine how wide the PDF would
-            // make a hidden word. If we change font metrics of our OCR fonts like `/ DW` this
-            // calibration needs to be adapted again. 
-            const GLYPHLESS_CHAR_WIDTH: f32 = 2.0;
-
-            // Create vec of `OcrTextLine`'s and loop over lines.
-            for line in ocr::merge_ocr_words_into_ocr_text_line(ocr_page.words()) {
-                
-                // Get words in line.
-                let words = line
-                    .words
-                    .iter()
-                    .filter(|word| !word.text.trim().is_empty())
-                    .collect::<Vec<_>>();
-
-                if words.is_empty() {
-                    continue;
-                }
-                
-                for word in words {
-                    let text = word.text.trim();
-                    let char_count = text.chars().count();
-                    if char_count == 0 {
-                        continue;
-                    }
-
-                    let x_pts = word.vbox.x as f32 * scale;
-                    let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
-                    let font_size = (word.vbox.h as f32 * scale).max(1.0);
-                    let word_width_pts = (word.vbox.w as f32 * scale).max(1.0);
-                    // Estimate how wide the glyphless font would make this text without Tz.
-                    let natural_text_width_pts = font_size * char_count as f32 / GLYPHLESS_CHAR_WIDTH;
-                    // Convert desired-width / natural-width into the percentage expected by Tz.
-                    let horizontal_scale_percent =
-                        100.0 * word_width_pts / natural_text_width_pts;
-                    // Keep pathological OCR boxes or font sizes from producing unusable scaling.
-                    let horizontal_scale = horizontal_scale_percent.clamp(5.0, 300.0);
-                    // Convert text to 16-bit hex representation which our Type0 font can
-                    // understand.
-                    let text_hex = text_to_utf16be_hex(text);
-
-                    // Rendering mode 3 adds invisible text to the page.
-                    // With Tz we set the ratio in percentage of how much we want to stretch the
-                    // invisible box to match the visual word.
-                    content.push_str(&format!(
-                    "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n{horizontal_scale:.2} Tz\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n<{text_hex}> Tj\nET\n"
-                ));
-                }
-            } 
+            ocr::pdf_renderer::append_page_text_layer(&mut content, ocr_page, height_pts);
         }
 
         let content_obj_num = first_content_object_index_curr_page + page_idx;
@@ -866,7 +807,10 @@ mod tests {
                 content_refs.push(obj_num);
             }
         }
-        assert!(!content_refs.is_empty(), "PDF should include /Contents references");
+        assert!(
+            !content_refs.is_empty(),
+            "PDF should include /Contents references"
+        );
         for obj_num in content_refs {
             assert!(
                 pdf_data.contains(&format!("{obj_num} 0 obj")),
