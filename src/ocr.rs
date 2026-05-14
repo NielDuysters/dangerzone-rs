@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use crate::PageData;
 use crate::GLYPHLESS_PDF_TTF;
 use kreuzberg_tesseract::{Pix, TesseractAPI, TessPageIteratorLevel};
@@ -11,18 +11,6 @@ use std::ffi::CStr;
 
 /// DPI used by container
 pub const DEFAULT_DPI: i32 = 150;
-
-/// Writing direction used to do OCR
-///
-/// Used to decide the text matrix to calculate the coordinates
-/// of objects in the PDF.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum OcrWritingDirection {
-    /// Left-to-right
-    LTR,
-    /// Right-to-left
-    RTL,
-}
 
 /// Object holding coordinates and size data of OCR object
 #[derive(Clone, Copy, Debug)]
@@ -35,30 +23,6 @@ pub(crate) struct OcrVBox {
     pub w: i32,
     /// Height
     pub h: i32,
-}
-
-/// Baseline reported by OCR in source image pixel
-///
-/// Tesseract use baselines instead of only relying on word boxes.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct OcrVBaseline {
-    /// Top-left X-coordinate
-    pub x1: i32,
-    /// Top-left Y-coordinate
-    pub y1: i32,
-    /// Bottom-right X-coordinate
-    pub x2: i32,
-    /// Bottom-right Y-coordinate
-    pub y2: i32,
-}
-
-impl OcrVBaseline {
-    /// Helper method to construct
-    pub fn new(x1: i32, y1: i32, x2: i32, y2: i32) -> Self {
-        Self {
-            x1, y1, x2, y2
-        }
-    }
 }
 
 /// Object for each word on a page
@@ -79,19 +43,6 @@ pub(crate) struct OcrWord {
     pub block_id: usize,
     /// Index of the line this word belongs to
     pub line_id: usize,
-    /// Baseline of this word in source image pixel
-    pub vbaseline: OcrVBaseline,
-    /// Baseline of the wrapping line this word belongs to
-    ///
-    /// We duplicate/denormalize this data over the multiple words from a line
-    /// to allow easier handling.
-    pub line_vbaseline: OcrVBaseline,
-    /// Reported font-size
-    pub font_size: i32,
-    /// Reported writing direction
-    pub writing_direction: OcrWritingDirection,
-    /// Flag determining if this word is the last in the line
-    pub last_in_line: bool,
 }
 
 /// Object for each line in the OCR PDF containing words
@@ -280,8 +231,6 @@ impl KreuzbergTesseractOcr {
         // Helper properties used when looping over iterator
         let mut block_id: usize = 0;
         let mut line_id: usize = 0;
-        let mut curr_line_baseline = OcrVBaseline::new(0,0,0,0);
-        let mut curr_writing_direction = OcrWritingDirection::LTR;
 
         // Reset iterator to first word on page
         unsafe { TessPageIteratorBegin(raw) };
@@ -298,14 +247,10 @@ impl KreuzbergTesseractOcr {
                 block_id += 1;
             }
 
-            // Store text-level baseline when the iterator goes into next line.
-            // A line-level baseline is used as reference for rotated/skewed text.
             if unsafe {
                 TessPageIteratorIsAtBeginningOf(raw, TessPageIteratorLevel::RIL_TEXTLINE as c_int)
             } != 0 {
                 line_id += 1;
-                curr_line_baseline = baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE)
-                .unwrap_or_else(|| fallback_baseline(raw, TessPageIteratorLevel::RIL_TEXTLINE));
             }
 
             // Extract text with word-level granularity.
@@ -346,34 +291,6 @@ impl KreuzbergTesseractOcr {
                 continue;
             };
 
-            // Set word_baseline. Fall back to horizontal line at
-            // bottom of word-box is missing.
-            let word_baseline = baseline(raw, TessPageIteratorLevel::RIL_WORD)
-                .unwrap_or_else(|| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h));
-
-            // Set direction. We cache this since orientation is
-            // not a property specific to one word alone, but all words
-            // on the same line need the same orientation. We remember
-            // the last orientation Tesseract reported.
-            if let Some(direction) = orientation(raw) {
-                curr_writing_direction = direction;
-            } 
-
-            // Set font size.
-            let font_size = word_font_size(raw).unwrap_or(0);
-
-            // Set flag determining if word is last in line.
-            // This flag avoids setting trailing spaces which would be
-            // required when there would be a next word. Since it's
-            // the last word no trailing space is required.
-            let last_in_line = unsafe {
-                TessPageIteratorIsAtFinalElement(
-                    raw,
-                    TessPageIteratorLevel::RIL_TEXTLINE as c_int,
-                    TessPageIteratorLevel::RIL_WORD as c_int,
-                )
-            } != 0;
-
             // Put extracted properties in `OcrWord` object and
             // push to result list.
             ocr_words.push(OcrWord {
@@ -381,11 +298,6 @@ impl KreuzbergTesseractOcr {
                 vbox,
                 block_id,
                 line_id,
-                vbaseline: word_baseline,
-                line_vbaseline: curr_line_baseline,
-                font_size,
-                writing_direction: curr_writing_direction,
-                last_in_line,
             });
 
             // Exit looping over words if no new word is found on page.
@@ -486,27 +398,6 @@ fn bounding_box(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<OcrVBo
     })
 }
 
-/// Baselines are returned as two points in image pixels. They may be angled
-/// if Tesseract detected skew or rotated text.
-fn baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<OcrVBaseline> {
-    let mut x1 = 0;
-    let mut y1 = 0;
-    let mut x2 = 0;
-    let mut y2 = 0;
-    let ok = unsafe {
-        TessPageIteratorBaseline(raw, level as c_int, &mut x1, &mut y1, &mut x2, &mut y2)
-    };
-    (ok != 0).then_some(OcrVBaseline::new(x1, y1, x2, y2))
-}
-
-/// When Tesseract cannot provide a baseline, use the bottom edge of the
-/// bounding box.
-fn fallback_baseline(raw: *mut c_void, level: TessPageIteratorLevel) -> OcrVBaseline {
-    bounding_box(raw, level)
-        .map(| vbox| OcrVBaseline::new(vbox.x, vbox.y + vbox.h, vbox.x + vbox.w, vbox.y + vbox.h))
-        .unwrap_or_else(|| OcrVBaseline::new(0, 0, 0, 0))
-}
-
 /// Get text returned by tesseract.
 fn utf8_text(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<String> {
     // Retrieve text
@@ -525,62 +416,12 @@ fn utf8_text(raw: *mut c_void, level: TessPageIteratorLevel) -> Option<String> {
     text
 }
 
-/// Get orientation metadata from tesseract
-fn orientation(raw: *mut c_void) -> Option<OcrWritingDirection> {
-    let mut orientation = 0;
-    let mut _writing_direction = 0;
-    let mut _textline_order = 0;
-    let mut _deskew_angle = 0.0;
-    unsafe {
-        TessPageIteratorOrientation(
-            raw,
-            &mut orientation,
-            &mut _writing_direction,
-            &mut _textline_order,
-            &mut _deskew_angle,
-        )
-    };
-    
-    Some(match orientation {
-        1 => OcrWritingDirection::RTL,
-        _ => OcrWritingDirection::LTR,
-    })
-}
-
-/// Get pointsize from tesseract.
-fn word_font_size(raw: *mut c_void) -> Option<i32> {
-    let mut _is_bold = 0;
-    let mut _is_italic = 0;
-    let mut _is_underlined = 0;
-    let mut _is_monospace = 0;
-    let mut _is_serif = 0;
-    let mut _is_smallcaps = 0;
-    let mut pointsize = 0;
-    let mut _font_id = 0;
-    let ok = unsafe {
-        TessResultIteratorWordFontAttributes(
-            raw,
-            &mut _is_bold,
-            &mut _is_italic,
-            &mut _is_underlined,
-            &mut _is_monospace,
-            &mut _is_serif,
-            &mut _is_smallcaps,
-            &mut pointsize,
-            &mut _font_id,
-        )
-    };
-    (ok != 0 && pointsize > 0).then_some(pointsize)
-}
-
 // Raw Tesseract C API calls that are not currently surfaced by
 // `kreuzberg-tesseract`'s safe Rust API.
 unsafe extern "C-unwind" {
     fn TessDeleteText(text: *mut c_char);
     fn TessPageIteratorBegin(handle: *mut c_void);
     fn TessPageIteratorIsAtBeginningOf(handle: *mut c_void, level: c_int) -> c_int;
-    fn TessPageIteratorIsAtFinalElement(handle: *mut c_void, level: c_int, element: c_int)
-        -> c_int;
     fn TessPageIteratorBoundingBox(
         handle: *mut c_void,
         level: c_int,
@@ -589,34 +430,8 @@ unsafe extern "C-unwind" {
         right: *mut c_int,
         bottom: *mut c_int,
     ) -> c_int;
-    fn TessPageIteratorBaseline(
-        handle: *mut c_void,
-        level: c_int,
-        x1: *mut c_int,
-        y1: *mut c_int,
-        x2: *mut c_int,
-        y2: *mut c_int,
-    ) -> c_int;
-    fn TessPageIteratorOrientation(
-        handle: *mut c_void,
-        orientation: *mut c_int,
-        writing_direction: *mut c_int,
-        textline_order: *mut c_int,
-        deskew_angle: *mut f32,
-    );
     fn TessResultIteratorGetUTF8Text(handle: *mut c_void, level: c_int) -> *mut c_char;
     fn TessResultIteratorNext(handle: *mut c_void, level: c_int) -> c_int;
-    fn TessResultIteratorWordFontAttributes(
-        handle: *mut c_void,
-        is_bold: *mut c_int,
-        is_italic: *mut c_int,
-        is_underlined: *mut c_int,
-        is_monospace: *mut c_int,
-        is_serif: *mut c_int,
-        is_smallcaps: *mut c_int,
-        pointsize: *mut c_int,
-        font_id: *mut c_int,
-    ) -> c_int;
 }
 
 /// Embed glyphless OCR font objects in PDF
