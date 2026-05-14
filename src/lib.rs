@@ -469,6 +469,11 @@ fn write_pdf<W: Write>(
             // each word position must be scaled and flipped vertically.
             let scale = 72.0 / DPI;
 
+            // This is a hardcoded const used for calibration to determine how wide the PDF would
+            // make a hidden word. If we change font metrics of our OCR fonts like `/ DW` this
+            // calibration needs to be adapted again. 
+            const GLYPHLESS_CHAR_WIDTH: f32 = 2.0;
+
             // Create vec of `OcrTextLine`'s and loop over lines.
             for line in ocr::merge_ocr_words_into_ocr_text_line(ocr_page.words()) {
                 
@@ -484,14 +489,32 @@ fn write_pdf<W: Write>(
                 }
                 
                 for word in words {
+                    let text = word.text.trim();
+                    let char_count = text.chars().count();
+                    if char_count == 0 {
+                        continue;
+                    }
+
                     let x_pts = word.vbox.x as f32 * scale;
                     let y_pts = height_pts - ((word.vbox.y + word.vbox.h) as f32 * scale);
                     let font_size = (word.vbox.h as f32 * scale).max(1.0);
-                    let text_hex = text_to_utf16be_hex(&word.text);
+                    let word_width_pts = (word.vbox.w as f32 * scale).max(1.0);
+                    // Estimate how wide the glyphless font would make this text without Tz.
+                    let natural_text_width_pts = font_size * char_count as f32 / GLYPHLESS_CHAR_WIDTH;
+                    // Convert desired-width / natural-width into the percentage expected by Tz.
+                    let horizontal_scale_percent =
+                        100.0 * word_width_pts / natural_text_width_pts;
+                    // Keep pathological OCR boxes or font sizes from producing unusable scaling.
+                    let horizontal_scale = horizontal_scale_percent.clamp(5.0, 300.0);
+                    // Convert text to 16-bit hex representation which our Type0 font can
+                    // understand.
+                    let text_hex = text_to_utf16be_hex(text);
 
                     // Rendering mode 3 adds invisible text to the page.
+                    // With Tz we set the ratio in percentage of how much we want to stretch the
+                    // invisible box to match the visual word.
                     content.push_str(&format!(
-                    "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n<{text_hex}> Tj\nET\n"
+                    "BT\n3 Tr\n/OcrFont {font_size:.2} Tf\n{horizontal_scale:.2} Tz\n1 0 0 1 {x_pts:.2} {y_pts:.2} Tm\n<{text_hex}> Tj\nET\n"
                 ));
                 }
             } 
