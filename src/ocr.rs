@@ -147,10 +147,9 @@ impl OcrPage {
                 .into_iter()
                 .map(|(text, x, y, w, h)| OcrWord {
                     text: text.to_string(),
-                    x,
-                    y,
-                    w,
-                    h,
+                    vbox: OcrVBox { x, y, w, h },
+                    block_id: 0,
+                    line_id: 0,
                 })
                 .collect(),
         )
@@ -547,10 +546,14 @@ mod tests {
         fn ocr_page(&self, _pixels: &[u8], width: u16, height: u16) -> OcrPage {
             OcrPage::new(vec![OcrWord {
                 text: format!("{width}x{height}"),
-                x: 1,
-                y: 2,
-                w: 3,
-                h: 4,
+                vbox: OcrVBox {
+                    x: 1,
+                    y: 2,
+                    w: 3,
+                    h: 4,
+                },
+                block_id: 0,
+                line_id: 0,
             }])
         }
     }
@@ -567,5 +570,52 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].words[0].text, "10x20");
         assert_eq!(result[1].words[0].text, "30x40");
+    }
+
+    #[test]
+    fn merge_ocr_words_groups_and_sorts_words_by_line() {
+        let words = vec![
+            OcrWord {
+                text: "line1-right".to_string(),
+                vbox: OcrVBox {
+                    x: 30,
+                    y: 0,
+                    w: 10,
+                    h: 10,
+                },
+                block_id: 0,
+                line_id: 0,
+            },
+            OcrWord {
+                text: "line1-left".to_string(),
+                vbox: OcrVBox {
+                    x: 10,
+                    y: 0,
+                    w: 10,
+                    h: 10,
+                },
+                block_id: 0,
+                line_id: 0,
+            },
+            OcrWord {
+                text: "line2".to_string(),
+                vbox: OcrVBox {
+                    x: 20,
+                    y: 20,
+                    w: 10,
+                    h: 10,
+                },
+                block_id: 0,
+                line_id: 1,
+            },
+        ];
+
+        let lines = merge_ocr_words_into_ocr_text_line(&words);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].words.len(), 2);
+        assert_eq!(lines[0].words[0].text, "line1-left");
+        assert_eq!(lines[0].words[1].text, "line1-right");
+        assert_eq!(lines[1].words.len(), 1);
+        assert_eq!(lines[1].words[0].text, "line2");
     }
 }

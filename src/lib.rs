@@ -837,7 +837,7 @@ mod tests {
 
         let pdf_data = String::from_utf8_lossy(&buffer.into_inner()).into_owned();
         assert!(
-            pdf_data.contains("/Font << /Focr"),
+            pdf_data.contains("/Font << /OcrFont"),
             "PDF should include OCR font resource"
         );
         assert!(
@@ -845,9 +845,34 @@ mod tests {
             "PDF should use invisible text rendering mode"
         );
         assert!(
-            pdf_data.contains("(hello \\(pdf\\)) Tj"),
-            "PDF should contain escaped OCR text"
+            pdf_data.contains("<00680065006C006C006F002000280070006400660029> Tj"),
+            "PDF should contain UTF-16BE hex OCR text"
         );
+        assert!(
+            pdf_data.contains(" Tz\n"),
+            "PDF should set horizontal text scaling for OCR width alignment"
+        );
+
+        // Verify that each /Contents reference points to an existing object.
+        let mut content_refs = Vec::new();
+        for line in pdf_data.lines() {
+            if let Some(rest) = line.strip_prefix("/Contents ") {
+                let obj_num: usize = rest
+                    .split_whitespace()
+                    .next()
+                    .expect("contents object number")
+                    .parse()
+                    .expect("valid contents object number");
+                content_refs.push(obj_num);
+            }
+        }
+        assert!(!content_refs.is_empty(), "PDF should include /Contents references");
+        for obj_num in content_refs {
+            assert!(
+                pdf_data.contains(&format!("{obj_num} 0 obj")),
+                "Missing content object for /Contents reference: {obj_num} 0 R"
+            );
+        }
     }
 
     #[test]
@@ -891,7 +916,7 @@ mod tests {
             "UNTRUSTED> \u{FFFD}\u{FFFD}y\n",
             "UNTRUSTED> ok line\n",
             "UNTRUSTED> \u{FFFD}[31mred\u{FFFD}[0m\n",
-            "UNTRUSTED> end",
+            "UNTRUSTED> end\n",
         );
 
         let reader = BufReader::new(std::io::Cursor::new(input.as_bytes()));
