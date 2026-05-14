@@ -23,6 +23,11 @@ fn text_to_utf16be_hex(text: &str) -> String {
 ///
 /// These objects are embedded once into the PDF and referenced
 /// by `/OcrFont`.
+//
+// TODO: Currently this method contains blocks of code constructing the several font objects to
+// embed in the PDF. I notice relations between these font objects like e.g object 3 (Type0)
+// referencing object 4 (CID font). I want to make different types/structs like Type0FontObject,
+// CidFontObject,... to make these objects better represented in the code.
 pub(crate) fn embed_ocr_font(
     pdf_data: &mut Vec<u8>,          // Raw PDF data
     object_offsets: &mut Vec<usize>, // Byte positions of each new object. Used to write the PDF xref table.
