@@ -5,7 +5,7 @@ mod helpers;
 
 use std::path::PathBuf;
 
-use ::kreuzberg_tesseract::{Pix, TesseractAPI};
+use kreuzberg_tesseract::{Pix, TesseractAPI};
 
 use super::{OcrBackend, OcrPage, DEFAULT_DPI};
 
