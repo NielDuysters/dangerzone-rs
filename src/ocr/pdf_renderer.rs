@@ -127,7 +127,7 @@ pub(crate) fn embed_ocr_font(
 }
 
 /// Append invisible OCR text operations to a page content stream.
-pub(crate) fn append_page_text_layer(content: &mut String, ocr_page: &OcrPage, height_pts: f32) {
+pub(crate) fn append_ocr_text_layer(content: &mut String, ocr_page: &OcrPage, height_pts: f32) {
     // OCR gives word boxes in page pixels, measured from the top-left.
     // PDF text positions use points, measured from the bottom-left, so
     // each word position must be scaled and flipped vertically.

@@ -468,7 +468,7 @@ fn write_pdf<W: Write>(
             format!("q\n{width_pts:.2} 0 0 {height_pts:.2} 0 0 cm\n/Im{page_idx} Do\nQ\n");
 
         if let Some(ocr_page) = ocr_pages.and_then(|pages| pages.get(page_idx)) {
-            ocr::pdf_renderer::append_page_text_layer(&mut content, ocr_page, height_pts);
+            ocr::pdf_renderer::append_ocr_text_layer(&mut content, ocr_page, height_pts);
         }
 
         let content_obj_num = first_content_object_index_curr_page + page_idx;
