@@ -161,14 +161,14 @@ pub(crate) trait OcrBackend {
     ///
     /// `pixels` must contain `width * height * 3` bytes in RGB order.
     fn ocr_page(&self, pixels: &[u8], width: u16, height: u16) -> OcrPage;
-}
 
-/// Run OCR for multiple pages with specified OCR-backend
-pub(crate) fn ocr_pages<B: OcrBackend>(pages: &[PageData], backend: &B) -> Vec<OcrPage> {
-    pages
-        .iter()
-        .map(|page| backend.ocr_page(&page.pixels, page.width, page.height))
-        .collect()
+    /// Run OCR for multiple pages.
+    fn ocr_pages(&self, pages: &[PageData]) -> Vec<OcrPage> {
+        pages
+            .iter()
+            .map(|page| self.ocr_page(&page.pixels, page.width, page.height))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -200,7 +200,7 @@ mod tests {
             PageData::new(30, 40, vec![255; 30 * 40 * 3]),
         ];
 
-        let result = ocr_pages(&pages, &FakeOcrBackend);
+        let result = FakeOcrBackend.ocr_pages(&pages);
 
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].words[0].text, "10x20");

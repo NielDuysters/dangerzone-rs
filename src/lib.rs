@@ -2,6 +2,7 @@
 use anyhow::{Context, Result};
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use ocr::OcrBackend;
 use std::fs::File;
 use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
 use std::process::{Command, Stdio};
@@ -294,11 +295,13 @@ pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool
         eprintln!("Applying OCR with integrated Linux backend...");
 
         let backend = ocr::KreuzbergTesseractOcr;
-        let ocr_pages = ocr::ocr_pages(&pages, &backend);
+        let ocr_pages = backend.ocr_pages(&pages);
         return pixels_to_pdf_with_ocr(&pages, &ocr_pages, &output_path)
             .context("Failed to convert pixels to OCR PDF");
     }
 
+    // Temporary fallback mechanism
+    // for non-Linux systems not using Kreuzberg-tesseract.
     let temp_output = if apply_ocr {
         format!("{output_path}.temp.pdf")
     } else {
