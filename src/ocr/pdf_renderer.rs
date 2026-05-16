@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use super::{merge_ocr_words_into_ocr_text_line, OcrPage};
+use super::OcrPage;
 use crate::DPI;
 
 const GLYPHLESS_PDF_TTF: &[u8] = include_bytes!("../../assets/pdf.ttf");
@@ -139,7 +139,7 @@ pub(crate) fn append_ocr_text_layer(content: &mut String, ocr_page: &OcrPage, he
     const GLYPHLESS_CHAR_WIDTH: f32 = 2.0;
 
     // Create vec of `OcrTextLine`'s and loop over lines.
-    for line in merge_ocr_words_into_ocr_text_line(ocr_page.words()) {
+    for line in ocr_page.text_lines() {
         // Get words in line.
         let words = line
             .words
