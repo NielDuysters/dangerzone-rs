@@ -70,7 +70,7 @@ pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator
         };
 
         // Trim text, and if it's empty try continuing to
-        // next word of end loop if no next is found.
+        // next word or end loop if no next is found.
         let text = text.trim().to_string();
         if text.is_empty() {
             if unsafe {
