@@ -241,15 +241,7 @@ pub fn convert_doc_to_pixels(input_path: String) -> Result<Vec<u8>> {
 pub fn pixels_to_pdf(pages: Vec<PageData>, output_path: String) -> Result<()> {
     eprintln!("Converting pixels to safe PDF...");
 
-    if pages.is_empty() {
-        anyhow::bail!("No pages to convert");
-    }
-
-    let mut file = File::create(&output_path).context(format!(
-        "Failed to create output file '{output_path_sanitized}'",
-        output_path_sanitized = replace_control_chars(&output_path, false)
-    ))?;
-    write_pdf(&mut file, &pages, None).context("Failed to write PDF")?;
+    write_pages_to_pdf_file(&pages, None, &output_path, "Failed to write PDF")?;
 
     eprintln!(
         "Safe PDF created successfully at: {output_path_sanitized}",
@@ -266,6 +258,26 @@ fn pixels_to_pdf_with_ocr(
 ) -> Result<()> {
     eprintln!("Converting pixels to safe PDF with OCR text layer...");
 
+    write_pages_to_pdf_file(
+        pages,
+        Some(ocr_pages),
+        output_path,
+        "Failed to write PDF with OCR",
+    )?;
+
+    eprintln!(
+        "Safe PDF with OCR created successfully at: {output_path_sanitized}",
+        output_path_sanitized = replace_control_chars(output_path, false)
+    );
+    Ok(())
+}
+
+fn write_pages_to_pdf_file(
+    pages: &[PageData],
+    ocr_pages: Option<&[ocr::OcrPage]>,
+    output_path: &str,
+    write_context: &'static str,
+) -> Result<()> {
     if pages.is_empty() {
         anyhow::bail!("No pages to convert");
     }
@@ -274,13 +286,7 @@ fn pixels_to_pdf_with_ocr(
         "Failed to create output file '{output_path_sanitized}'",
         output_path_sanitized = replace_control_chars(output_path, false)
     ))?;
-    write_pdf(&mut file, pages, Some(ocr_pages)).context("Failed to write PDF with OCR")?;
-
-    eprintln!(
-        "Safe PDF with OCR created successfully at: {output_path_sanitized}",
-        output_path_sanitized = replace_control_chars(output_path, false)
-    );
-    Ok(())
+    write_pdf(&mut file, pages, ocr_pages).context(write_context)
 }
 
 /// Convert a document to a safe PDF in one call
