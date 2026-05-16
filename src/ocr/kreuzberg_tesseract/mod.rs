@@ -96,6 +96,6 @@ impl OcrBackend for KreuzbergTesseractOcr {
             Err(_) => return OcrPage::new(Vec::new()),
         };
 
-        OcrPage::new(helpers::extract_pdf_words(&iterator))
+        OcrPage::new(helpers::extract_ocr_words(&iterator))
     }
 }

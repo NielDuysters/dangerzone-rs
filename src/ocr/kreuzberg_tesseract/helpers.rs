@@ -8,11 +8,11 @@ use kreuzberg_tesseract::TessPageIteratorLevel;
 use super::bindings;
 use crate::ocr::{OcrVBox, OcrWord};
 
-/// Extract PDF words and their properties.
+/// Extract OCR words and their properties.
 ///
 /// Required to construct OcrWord's. We use Tesseract's low-level iterator since it provides
 /// more details.
-pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator) -> Vec<OcrWord> {
+pub(super) fn extract_ocr_words(iterator: &::kreuzberg_tesseract::ResultIterator) -> Vec<OcrWord> {
     // Get raw handle
     let Ok(handle) = iterator.handle.lock() else {
         return Vec::new();
