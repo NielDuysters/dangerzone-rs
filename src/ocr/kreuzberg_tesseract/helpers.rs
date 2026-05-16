@@ -22,8 +22,8 @@ pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator
     // Vector containing results we will return
     let mut ocr_words: Vec<OcrWord> = Vec::new();
 
-    // Helper properties used when looping over iterator
-    let mut block_id: usize = 0;
+    // Track line_id to set property on `OcrWord`. This property can later be used to group words
+    // into lines.
     let mut line_id: usize = 0;
 
     // Reset iterator to first word on page
@@ -31,20 +31,6 @@ pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator
 
     // Loop over words on page
     loop {
-        // Tesseract has moved to a new visual element
-        //
-        // Update block_id to prevent the PDF writer to join/mix
-        // text that should remain separated.
-        if unsafe {
-            bindings::TessPageIteratorIsAtBeginningOf(
-                raw,
-                TessPageIteratorLevel::RIL_BLOCK as c_int,
-            )
-        } != 0
-        {
-            block_id += 1;
-        }
-
         if unsafe {
             bindings::TessPageIteratorIsAtBeginningOf(
                 raw,
@@ -101,7 +87,6 @@ pub(super) fn extract_pdf_words(iterator: &::kreuzberg_tesseract::ResultIterator
         ocr_words.push(OcrWord {
             text,
             vbox,
-            block_id,
             line_id,
         });
 

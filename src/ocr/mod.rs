@@ -34,10 +34,6 @@ pub(crate) struct OcrWord {
     pub text: String,
     /// Coordinates + sizing properties
     pub vbox: OcrVBox,
-    /// Index of text-block this word belongs to
-    ///
-    /// Used to avoid mixing words from different blocks into one
-    pub block_id: usize,
     /// Index of the line this word belongs to
     pub line_id: usize,
 }
@@ -72,7 +68,7 @@ pub(crate) fn merge_ocr_words_into_ocr_text_line(
     fn word_in_curr_line(line: &OcrTextLine<'_>, word: &OcrWord) -> bool {
         line.words
             .last()
-            .is_some_and(|last| last.block_id == word.block_id && last.line_id == word.line_id)
+            .is_some_and(|last| last.line_id == word.line_id)
     }
 
     // Loop over words.
@@ -143,7 +139,6 @@ impl OcrPage {
                 .map(|(text, x, y, w, h)| OcrWord {
                     text: text.to_string(),
                     vbox: OcrVBox { x, y, w, h },
-                    block_id: 0,
                     line_id: 0,
                 })
                 .collect(),
@@ -187,7 +182,6 @@ mod tests {
                     w: 3,
                     h: 4,
                 },
-                block_id: 0,
                 line_id: 0,
             }])
         }
@@ -218,7 +212,6 @@ mod tests {
                     w: 10,
                     h: 10,
                 },
-                block_id: 0,
                 line_id: 0,
             },
             OcrWord {
@@ -229,7 +222,6 @@ mod tests {
                     w: 10,
                     h: 10,
                 },
-                block_id: 0,
                 line_id: 0,
             },
             OcrWord {
@@ -240,7 +232,6 @@ mod tests {
                     w: 10,
                     h: 10,
                 },
-                block_id: 0,
                 line_id: 1,
             },
         ];
