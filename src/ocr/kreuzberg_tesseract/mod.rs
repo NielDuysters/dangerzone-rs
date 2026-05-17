@@ -1,6 +1,5 @@
 //! OCR backend powered by the `kreuzberg-tesseract` used for Linux
 
-mod bindings;
 mod helpers;
 
 use std::path::PathBuf;
