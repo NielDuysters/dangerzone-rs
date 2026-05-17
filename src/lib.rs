@@ -300,7 +300,8 @@ pub fn convert_document(input_path: String, output_path: String, apply_ocr: bool
     if apply_ocr {
         eprintln!("Applying OCR with integrated Linux backend...");
 
-        let backend = ocr::KreuzbergTesseractOcr;
+        let backend = ocr::KreuzbergTesseractOcr::new()
+            .context("Failed to initialize integrated Linux OCR backend")?;
         let ocr_pages = backend.ocr_pages(&pages);
         return pixels_to_pdf_with_ocr(&pages, &ocr_pages, &output_path)
             .context("Failed to convert pixels to OCR PDF");

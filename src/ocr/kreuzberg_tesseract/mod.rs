@@ -5,14 +5,29 @@ mod helpers;
 
 use std::path::PathBuf;
 
+use anyhow::{Context, Result};
 use kreuzberg_tesseract::{Pix, TesseractAPI};
 
 use super::{OcrBackend, OcrPage, DEFAULT_DPI};
 
 /// OCR backend powered by the `kreuzberg-tesseract` used for Linux
-pub(crate) struct KreuzbergTesseractOcr;
+pub(crate) struct KreuzbergTesseractOcr {
+    api: TesseractAPI,
+}
 
 impl KreuzbergTesseractOcr {
+    pub(crate) fn new() -> Result<Self> {
+        let api = TesseractAPI::new().context("Failed to create Tesseract API")?;
+        let tessdata_dir = Self::tessdata_dir().context("Failed to find Tesseract tessdata")?;
+
+        // Seed Tesseract with trained language data.
+        // TODO: Currently we only support English. Support other languages too.
+        api.init(&tessdata_dir, "eng")
+            .context("Failed to initialize Tesseract API")?;
+
+        Ok(Self { api })
+    }
+
     /// Resolve the tessdata directory used to initialize Tesseract
     ///
     /// `TESSDATA_PREFIX` has priority when set. Otherwise we use the tessdata
@@ -59,39 +74,21 @@ impl OcrBackend for KreuzbergTesseractOcr {
         // Pix as image metadata so Tesseract can interpret text size correctly.
         let _ = pix.set_resolution(DEFAULT_DPI, DEFAULT_DPI);
 
-        // Initialize tesseract engine for this page to do OCR.
-        // TODO: Find a way to re-use same instance for all pages.
-        let api = match TesseractAPI::new() {
-            Ok(api) => api,
-            Err(_) => return OcrPage::new(Vec::new()),
-        };
-
-        // Seed tesseract with trained language data.
-        // TODO: Currently we only support English. Support other languages to.
-        // TODO: Check if we can seed the trained data for the whole PDF instead of per-page.
-        let tessdata_dir = match Self::tessdata_dir() {
-            Some(path) => path,
-            None => return OcrPage::new(Vec::new()),
-        };
-        if api.init(&tessdata_dir, "eng").is_err() {
-            return OcrPage::new(Vec::new());
-        }
-
         // Give Tesseract the Leptonica image. `set_image_2` borrows the Pix
         // pointer; keep `pix` alive for the rest of this method.
-        if api.set_image_2(pix.as_ptr()).is_err() {
+        if self.api.set_image_2(pix.as_ptr()).is_err() {
             return OcrPage::new(Vec::new());
         }
 
         // Also set the source resolution on the Tesseract API. Some OCR paths
         // read DPI from the engine state rather than from the Pix metadata.
-        let _ = api.set_source_resolution(DEFAULT_DPI);
+        let _ = self.api.set_source_resolution(DEFAULT_DPI);
 
-        if api.recognize().is_err() {
+        if self.api.recognize().is_err() {
             return OcrPage::new(Vec::new());
         }
 
-        let iterator = match api.get_iterator() {
+        let iterator = match self.api.get_iterator() {
             Ok(iterator) => iterator,
             Err(_) => return OcrPage::new(Vec::new()),
         };
