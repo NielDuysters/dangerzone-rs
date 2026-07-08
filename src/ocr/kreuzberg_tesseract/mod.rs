@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use kreuzberg_tesseract::{Pix, ResultIterator, TesseractAPI};
 
-use crate::DPI;
+use crate::{DPI, PageData};
 
 use super::{OcrBackend, OcrPage, OcrVBox, OcrWord};
 
@@ -70,6 +70,15 @@ impl KreuzbergTesseractOcr {
         } else {
             path.join("tessdata")
         }
+    }
+ 
+    /// Run OCR pages on multiple pages in parallel. The idea is that this method
+    /// will spawn multiple Rayon workers with each their own Tesseract API instance.
+    // In theory we could also change the implementation of `ocr_pages`,
+    // but temporarily for simplicity I will keep this separate since not all backends have
+    // a Tesseract API.
+    pub(crate) fn ocr_pages_parallel(pages: &[PageData]) -> Result<Vec<OcrPage>> {
+        unimplemented!();
     }
 }
 
