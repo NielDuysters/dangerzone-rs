@@ -6,10 +6,9 @@ use anyhow::{anyhow, Context, Result};
 use kreuzberg_tesseract::{Pix, ResultIterator, TesseractAPI};
 use rayon::{prelude::*, ThreadPoolBuilder};
 
-use crate::{DPI, PageData};
+use crate::{PageData, DPI};
 
 use super::{OcrBackend, OcrPage, OcrVBox, OcrWord};
-
 
 /// OCR backend powered by the `kreuzberg-tesseract` used for Linux.
 pub(crate) struct KreuzbergTesseractOcr;
@@ -23,7 +22,7 @@ struct KreuzbergTesseractOcrWorker {
 }
 
 impl KreuzbergTesseractOcrWorker {
-    /// Create new 
+    /// Create new
     pub(crate) fn new() -> Result<Self> {
         let api = TesseractAPI::new().context("Failed to create Tesseract API")?;
         let tessdata_dir = Self::tessdata_dir().context("Failed to find Tesseract tessdata")?;
@@ -36,7 +35,7 @@ impl KreuzbergTesseractOcrWorker {
 
         Ok(Self { api })
     }
-    
+
     /// Resolve the tessdata directory used to initialize Tesseract
     ///
     /// `TESSDATA_PREFIX` has priority when set. Otherwise we use the tessdata
@@ -80,7 +79,7 @@ impl KreuzbergTesseractOcrWorker {
             path.join("tessdata")
         }
     }
-    
+
     fn ocr_page(&self, pixels: &[u8], width: u16, height: u16) -> Result<OcrPage> {
         // Pass container's bytes directly using Leptonica's Pix wrapper
         // exposed by `kreuzberg-tesseract`.
@@ -135,7 +134,6 @@ impl KreuzbergTesseractOcr {
             .unwrap_or(1)
     }
 
-
     /// Handle OCR for all pages in parallel.
     /// This method creates a pool of Rayon workers, each Rayon-worker will initialize it's own
     /// instance of a `KreuzbergTesseractWorker` containing a Tesseract object.
@@ -154,21 +152,20 @@ impl KreuzbergTesseractOcr {
                     // The `init` argument for `map_init`.
                     // Each worker wil init it's own instance of `KreuzbergTesseractWorker`
                     // responsible for performing the OCR on the allocated pages.
-                    || KreuzbergTesseractOcrWorker::new(),
+                    KreuzbergTesseractOcrWorker::new,
                     // `ocr_backend` is the result of our previous `map_init` call.
                     // `page` is one item from the `pages.par_item` allocted to current worker.
                     |ocr_worker, page| -> Result<OcrPage> {
                         // Get OCR-worker as reference so we do not move it out
                         // of the local Rayon-worker.
-                        let worker = ocr_worker
-                            .as_ref()
-                            .map_err(|err| anyhow!("Failed to init KreuzbergTesseractWorker: {err}"))?;
+                        let worker = ocr_worker.as_ref().map_err(|err| {
+                            anyhow!("Failed to init KreuzbergTesseractWorker: {err}")
+                        })?;
 
-                        worker.ocr_page(&page.pixels, page.width, page.height)
-                            .with_context(|| {
-                                "Failed to run KreuzbergTesseractOCR.".to_string()
-                            })
-                    }
+                        worker
+                            .ocr_page(&page.pixels, page.width, page.height)
+                            .with_context(|| "Failed to run KreuzbergTesseractOCR.".to_string())
+                    },
                 )
                 .collect::<Result<Vec<OcrPage>>>()
         })

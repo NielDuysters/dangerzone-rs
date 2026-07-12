@@ -507,7 +507,7 @@ pub fn apply_ocr_fn(input_path: String, output_path: String) -> Result<()> {
     // let ocr_pages = KreuzbergTesseractOcr::ocr_pages_parallel(&pages)
     //    .context("Failed to run KreuzbergTesseractOcr backend in parallel")?;
 
-    let backend = ocr::KreuzbergTesseractOcr::new();
+    let backend = KreuzbergTesseractOcr::new();
     let ocr_pages = backend
         .ocr_pages(&pages)
         .context("Failed to run OCR backend")?;
