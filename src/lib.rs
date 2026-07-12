@@ -498,15 +498,6 @@ pub fn apply_ocr_fn(input_path: String, output_path: String) -> Result<()> {
     let pixels_data = convert_doc_to_pixels(input_path)?;
     let pages = parse_pixel_data(pixels_data)?;
 
-    // let backend =
-    //    ocr::KreuzbergTesseractOcr::new().context("Failed to initialize integrated OCR backend")?;
-    // let ocr_pages = backend
-    //    .ocr_pages(&pages)
-    // .context("Failed to run integrated OCR backend")?;
-
-    // let ocr_pages = KreuzbergTesseractOcr::ocr_pages_parallel(&pages)
-    //    .context("Failed to run KreuzbergTesseractOcr backend in parallel")?;
-
     let backend = KreuzbergTesseractOcr::new();
     let ocr_pages = backend
         .ocr_pages(&pages)
@@ -515,6 +506,7 @@ pub fn apply_ocr_fn(input_path: String, output_path: String) -> Result<()> {
     pixels_to_pdf_with_ocr(&pages, &ocr_pages, &output_path)
         .context("Failed to convert pixels to OCR PDF")
 }
+
 /// Python bindings module
 /// Re-exports from the python module to make them available to PyO3
 #[cfg(feature = "python")]

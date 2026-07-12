@@ -22,8 +22,11 @@ struct KreuzbergTesseractOcrWorker {
 }
 
 impl KreuzbergTesseractOcrWorker {
-    /// Create new
-    pub(crate) fn new() -> Result<Self> {
+    /// Create new instance of OCR worker. This worker will
+    /// contain the logic to init the Tesseract API instance + doing
+    /// OCR for a page. Since each Rayon worker will have one
+    /// OCR-worker this is the logical structure.
+    fn new() -> Result<Self> {
         let api = TesseractAPI::new().context("Failed to create Tesseract API")?;
         let tessdata_dir = Self::tessdata_dir().context("Failed to find Tesseract tessdata")?;
 
@@ -128,7 +131,7 @@ impl KreuzbergTesseractOcr {
     /// Amount of max workers.
     /// The amount of workers is half the amount of available CPU cores to avoid overloading the
     /// CPU.
-    fn max_workers(&self) -> usize {
+    fn max_workers() -> usize {
         std::thread::available_parallelism()
             .map(|cpus| std::cmp::max(1, cpus.get() / 2))
             .unwrap_or(1)
@@ -140,7 +143,7 @@ impl KreuzbergTesseractOcr {
     fn ocr_pages_parallel(&self, pages: &[PageData]) -> Result<Vec<OcrPage>> {
         // Create pool of Rayon workers.
         let pool = ThreadPoolBuilder::new()
-            .num_threads(self.max_workers())
+            .num_threads(Self::max_workers())
             .build()
             .context("Failed to create pool of Rayon workers for parallel OCR.")?;
 
