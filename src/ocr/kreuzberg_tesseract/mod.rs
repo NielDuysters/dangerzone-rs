@@ -11,12 +11,19 @@ use crate::{DPI, PageData};
 use super::{OcrBackend, OcrPage, OcrVBox, OcrWord};
 
 
-/// OCR backend powered by the `kreuzberg-tesseract` used for Linux
-pub(crate) struct KreuzbergTesseractOcr {
+/// OCR backend powered by the `kreuzberg-tesseract` used for Linux.
+pub(crate) struct KreuzbergTesseractOcr;
+
+/// Since the `KreuzbergTesseractOcr` backend will be always called
+/// parallel we need a seperate type representing the worker.
+/// This worker will be initialized in the Rayon workers, and will
+/// contain the logic to do OCR work for a page.
+struct KreuzbergTesseractOcrWorker {
     api: TesseractAPI,
 }
 
-impl KreuzbergTesseractOcr {
+impl KreuzbergTesseractOcrWorker {
+    /// Create new 
     pub(crate) fn new() -> Result<Self> {
         let api = TesseractAPI::new().context("Failed to create Tesseract API")?;
         let tessdata_dir = Self::tessdata_dir().context("Failed to find Tesseract tessdata")?;
@@ -29,7 +36,7 @@ impl KreuzbergTesseractOcr {
 
         Ok(Self { api })
     }
-
+    
     /// Resolve the tessdata directory used to initialize Tesseract
     ///
     /// `TESSDATA_PREFIX` has priority when set. Otherwise we use the tessdata
@@ -73,56 +80,7 @@ impl KreuzbergTesseractOcr {
             path.join("tessdata")
         }
     }
- 
-    /// Run OCR pages on multiple pages in parallel. The idea is that this method
-    /// will spawn multiple Rayon workers with each their own Tesseract API instance.
-    // In theory we could also change the implementation of `ocr_pages`,
-    // but temporarily for simplicity I will keep this separate since not all backends have
-    // a Tesseract API.
-    pub(crate) fn ocr_pages_parallel(pages: &[PageData]) -> Result<Vec<OcrPage>> {
-        // Get max workers. We want the amount of workers to be half of the 
-        // CPU cores available. This do keep CPU power available for other work
-        // and not overload it fully with OCR.
-        let max_workers = std::thread::available_parallelism()
-            .map(|cpus| std::cmp::max(1, cpus.get() / 2))
-            .unwrap_or(1);
-   
-        // Create pool of Rayon workers.
-        let pool = ThreadPoolBuilder::new()
-            .num_threads(max_workers)
-            .build()
-            .context("Failed to create pool of Rayon workers for parallel OCR.")?;
-
-        // Set prevous initiated pool to run closure.
-        pool.install(|| {
-            pages
-                .par_iter() // Conver iter into Rayon parallel iterator.
-                .map_init(
-                    // The `init` argument for `map_init`.
-                    // This means `KreuzbergTesseractOcr::new` is executed once per Rayon worker.
-                    // meaning we will have one TesseractAPI instance per worker.
-                    || KreuzbergTesseractOcr::new(),
-                    // `ocr_backend` is the result of our previous `map_init` call.
-                    // `page` is one item from the `pages.par_item` allocted to current worker.
-                    |ocr_backend, page| -> Result<OcrPage> {
-                        // Get backend of worker as reference so we do not move it out
-                        // of the worker local.
-                        let backend = ocr_backend
-                            .as_ref()
-                            .map_err(|err| anyhow!("Failed to init KreuzbergTesseractOCR worker: {err}"))?;
-
-                        backend.ocr_page(&page.pixels, page.width, page.height)
-                            .with_context(|| {
-                                "Failed to run KreuzbergTesseractOCR.".to_string()
-                            })
-                    }
-                )
-                .collect::<Result<Vec<OcrPage>>>()
-        })
-    }
-}
-
-impl OcrBackend for KreuzbergTesseractOcr {
+    
     fn ocr_page(&self, pixels: &[u8], width: u16, height: u16) -> Result<OcrPage> {
         // Pass container's bytes directly using Leptonica's Pix wrapper
         // exposed by `kreuzberg-tesseract`.
@@ -157,6 +115,75 @@ impl OcrBackend for KreuzbergTesseractOcr {
             .context("Failed to get Tesseract result iterator")?;
 
         Ok(OcrPage::new(extract_ocr_words(&iterator)?))
+    }
+}
+
+impl KreuzbergTesseractOcr {
+    /// Create instance of `KreuzbergTesseractOcr`.
+    /// This type only contains methods to call logic for
+    /// parallel OCR.
+    pub(crate) fn new() -> Self {
+        Self
+    }
+
+    /// Amount of max workers.
+    /// The amount of workers is half the amount of available CPU cores to avoid overloading the
+    /// CPU.
+    fn max_workers(&self) -> usize {
+        std::thread::available_parallelism()
+            .map(|cpus| std::cmp::max(1, cpus.get() / 2))
+            .unwrap_or(1)
+    }
+
+
+    /// Handle OCR for all pages in parallel.
+    /// This method creates a pool of Rayon workers, each Rayon-worker will initialize it's own
+    /// instance of a `KreuzbergTesseractWorker` containing a Tesseract object.
+    fn ocr_pages_parallel(&self, pages: &[PageData]) -> Result<Vec<OcrPage>> {
+        // Create pool of Rayon workers.
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(self.max_workers())
+            .build()
+            .context("Failed to create pool of Rayon workers for parallel OCR.")?;
+
+        // Set previous initiated pool to run closure.
+        pool.install(|| {
+            pages
+                .par_iter() // Convert iter into Rayon parallel iterator.
+                .map_init(
+                    // The `init` argument for `map_init`.
+                    // Each worker wil init it's own instance of `KreuzbergTesseractWorker`
+                    // responsible for performing the OCR on the allocated pages.
+                    || KreuzbergTesseractOcrWorker::new(),
+                    // `ocr_backend` is the result of our previous `map_init` call.
+                    // `page` is one item from the `pages.par_item` allocted to current worker.
+                    |ocr_worker, page| -> Result<OcrPage> {
+                        // Get OCR-worker as reference so we do not move it out
+                        // of the local Rayon-worker.
+                        let worker = ocr_worker
+                            .as_ref()
+                            .map_err(|err| anyhow!("Failed to init KreuzbergTesseractWorker: {err}"))?;
+
+                        worker.ocr_page(&page.pixels, page.width, page.height)
+                            .with_context(|| {
+                                "Failed to run KreuzbergTesseractOCR.".to_string()
+                            })
+                    }
+                )
+                .collect::<Result<Vec<OcrPage>>>()
+        })
+    }
+}
+
+impl OcrBackend for KreuzbergTesseractOcr {
+    fn ocr_page(&self, _pixels: &[u8], _width: u16, _height: u16) -> Result<OcrPage> {
+        anyhow::bail!(
+            "KreuzbergTesseractOcr does not support direct single-pace OCR calls. Call `ocr_pages` instead to leverage parellel OCR"
+        )
+    }
+
+    fn ocr_pages(&self, pages: &[PageData]) -> Result<Vec<OcrPage>> {
+        self.ocr_pages_parallel(pages)
     }
 }
 

@@ -504,8 +504,13 @@ pub fn apply_ocr_fn(input_path: String, output_path: String) -> Result<()> {
     //    .ocr_pages(&pages)
     // .context("Failed to run integrated OCR backend")?;
 
-    let ocr_pages = KreuzbergTesseractOcr::ocr_pages_parallel(&pages)
-        .context("Failed to run KreuzbergTesseractOcr backend in parallel")?;
+    // let ocr_pages = KreuzbergTesseractOcr::ocr_pages_parallel(&pages)
+    //    .context("Failed to run KreuzbergTesseractOcr backend in parallel")?;
+
+    let backend = ocr::KreuzbergTesseractOcr::new();
+    let ocr_pages = backend
+        .ocr_pages(&pages)
+        .context("Failed to run OCR backend")?;
 
     pixels_to_pdf_with_ocr(&pages, &ocr_pages, &output_path)
         .context("Failed to convert pixels to OCR PDF")
