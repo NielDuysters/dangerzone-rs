@@ -156,7 +156,7 @@ impl KreuzbergTesseractOcr {
                     // Each worker wil init it's own instance of `KreuzbergTesseractWorker`
                     // responsible for performing the OCR on the allocated pages.
                     KreuzbergTesseractOcrWorker::new,
-                    // `ocr_backend` is the result of our previous `map_init` call.
+                    // `ocr_worker` is the result of our previous `map_init` call.
                     // `page` is one item from the `pages.par_item` allocted to current worker.
                     |ocr_worker, page| -> Result<OcrPage> {
                         // Get OCR-worker as reference so we do not move it out
