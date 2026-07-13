@@ -14,7 +14,7 @@ use super::{OcrBackend, OcrPage, OcrVBox, OcrWord};
 pub(crate) struct KreuzbergTesseractOcr;
 
 /// Since the `KreuzbergTesseractOcr` backend will be always called
-/// parallel we need a seperate type representing the worker.
+/// in parallel, we need a seperate type representing the worker.
 /// This worker will be initialized in the Rayon workers, and will
 /// contain the logic to do OCR work for a page.
 struct KreuzbergTesseractOcrWorker {
