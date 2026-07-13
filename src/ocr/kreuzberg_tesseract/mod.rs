@@ -153,7 +153,7 @@ impl KreuzbergTesseractOcr {
                 .par_iter() // Convert iter into Rayon parallel iterator.
                 .map_init(
                     // The `init` argument for `map_init`.
-                    // Each worker wil init it's own instance of `KreuzbergTesseractWorker`
+                    // Each worker wil init its own instance of `KreuzbergTesseractWorker`
                     // responsible for performing the OCR on the allocated pages.
                     KreuzbergTesseractOcrWorker::new,
                     // `ocr_worker` is the result of our previous `map_init` call.
